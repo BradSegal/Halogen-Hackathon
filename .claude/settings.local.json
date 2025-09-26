@@ -1,4 +1,8 @@
 {
+  "env": {
+    "BASH_DEFAULT_TIMEOUT_MS": "10000000",
+    "BASH_MAX_TIMEOUT_MS": "30000000"
+  },
   "permissions": {
     "allow": [
       "Bash(pip install:*)",
@@ -22,7 +26,8 @@
       "Bash(git merge:*)",
       "Read(//home/bradl/**)",
       "Bash(pytest:*)",
-      "Bash(git reset:*)"
+      "Bash(git reset:*)",
+      "Bash(cd:*)"
     ],
     "deny": [],
     "ask": []

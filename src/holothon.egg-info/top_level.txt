@@ -1,4 +1,0 @@
-analysis_dashboard
-app
-lesion_analysis
-visualization

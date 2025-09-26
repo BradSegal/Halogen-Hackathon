@@ -7,6 +7,7 @@ import tempfile
 import shutil
 import subprocess
 import sys
+import os
 from nilearn import image
 
 from scripts.train_baseline_models import PROJECT_ROOT
@@ -328,3 +329,55 @@ def test_script_prints_expected_metrics(temp_project_structure):
     # Both metrics should be reasonable values
     assert 0 <= rmse <= 20  # RMSE should be positive and reasonable
     assert 0 <= bacc <= 1  # Balanced accuracy should be between 0 and 1
+
+
+def test_train_on_all_data_flag_task1(temp_project_structure, capsys):
+    """Test that --train-on-all-data flag changes Task 1 training behavior."""
+    temp_dir, _ = temp_project_structure
+
+    # Run script WITHOUT flag (default behavior)
+    result_without = subprocess.run(
+        [sys.executable, str(PROJECT_ROOT / "scripts" / "train_baseline_models.py")],
+        capture_output=True,
+        text=True,
+        cwd=str(temp_dir),
+        env={**dict(os.environ), "PROJECT_ROOT": str(temp_dir)},
+    )
+
+    # Run script WITH flag
+    result_with = subprocess.run(
+        [
+            sys.executable,
+            str(PROJECT_ROOT / "scripts" / "train_baseline_models.py"),
+            "--train-on-all-data",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=str(temp_dir),
+        env={**dict(os.environ), "PROJECT_ROOT": str(temp_dir)},
+    )
+
+    # Check both ran successfully
+    assert (
+        result_without.returncode == 0
+    ), f"Script failed without flag: {result_without.stderr}"
+    assert result_with.returncode == 0, f"Script failed with flag: {result_with.stderr}"
+
+    # Check that output shows different behavior
+    assert "Training on non-zero score data only" in result_without.stdout
+    assert "Training on ALL data" in result_with.stdout
+
+    # The version with all data should report more training samples
+    # Extract sample counts from output (basic check)
+    import re
+
+    match_without = re.search(r"Training samples used: (\d+)", result_without.stdout)
+    match_with = re.search(r"Training samples used: (\d+)", result_with.stdout)
+
+    if match_without and match_with:
+        samples_without = int(match_without.group(1))
+        samples_with = int(match_with.group(1))
+        # When training on all data, we should have more samples
+        assert (
+            samples_with >= samples_without
+        ), f"Expected more samples with flag ({samples_with}) than without ({samples_without})"

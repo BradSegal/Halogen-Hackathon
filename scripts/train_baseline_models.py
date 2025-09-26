@@ -1,3 +1,4 @@
+import argparse
 import joblib
 import numpy as np
 import pandas as pd
@@ -9,6 +10,17 @@ from sklearn.linear_model import RidgeCV, LogisticRegressionCV
 from sklearn.metrics import mean_squared_error, balanced_accuracy_score
 
 from src.lesion_analysis.features.voxel import downsample_and_flatten_lesions
+
+# --- Parse Arguments ---
+parser = argparse.ArgumentParser(
+    description="Train baseline models for lesion analysis"
+)
+parser.add_argument(
+    "--train-on-all-data",
+    action="store_true",
+    help="If set, train Task 1 on all data, not just score > 0.",
+)
+args = parser.parse_args()
 
 # --- Configuration ---
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -29,9 +41,15 @@ X_train_all = downsample_and_flatten_lesions(train_df, FEATURES_CACHE_DIR)
 
 # --- 3. Task 1: Deficit Prediction (Regression) ---
 print("\n--- Training Task 1 Model ---")
-task1_mask = (train_df.clinical_score > 0).values
-X_task1 = X_train_all[task1_mask]
-y_task1 = train_df.loc[task1_mask, "clinical_score"].values
+if args.train_on_all_data:
+    print("Training on ALL data (scores >= 0).")
+    X_task1 = X_train_all
+    y_task1 = train_df["clinical_score"].values
+else:
+    print("Training on non-zero score data only (scores > 0).")
+    task1_mask = (train_df.clinical_score > 0).values
+    X_task1 = X_train_all[task1_mask]
+    y_task1 = train_df.loc[task1_mask, "clinical_score"].values
 
 model_task1 = RidgeCV(alphas=np.logspace(-3, 3, 7))
 model_task1.fit(X_task1, y_task1)
@@ -40,6 +58,7 @@ model_task1.fit(X_task1, y_task1)
 preds = model_task1.predict(X_task1)
 rmse = np.sqrt(mean_squared_error(y_task1, preds))
 print(f"Task 1 Train RMSE: {rmse:.4f}")
+print(f"Training samples used: {len(X_task1)}")
 
 joblib.dump(model_task1, MODELS_DIR / "task1_baseline_model.pkl")
 print("Task 1 model saved.")

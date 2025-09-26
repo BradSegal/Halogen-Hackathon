@@ -19,8 +19,16 @@ dependencies = [
     "streamlit",
     "dash",
     "scipy",
-    "pydantic"
+    "pydantic",
+    "torch",
+    "torchvision",
+    "xgboost"
 ]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+exclude = ["tests*"]
 
 [tool.mypy]
 # Performance optimizations

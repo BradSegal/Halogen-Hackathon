@@ -71,7 +71,11 @@ def load_and_prepare_data(csv_path: Path, lesions_dir: Path) -> pd.DataFrame:
     # Pydantic will iterate through the records and raise a comprehensive
     # ValidationError if any record is invalid (e.g., missing file, bad type).
     records = df.to_dict(orient="records")
-    _ = [LesionRecord(**row) for row in records]  # type: ignore[misc]
+    validated_records = [LesionRecord(**row) for row in records]  # type: ignore[misc]
+
+    # --- Reconstruct DataFrame from validated data ---
+    # This is critical - we use the clean, validated data from Pydantic
+    df = pd.DataFrame([rec.model_dump() for rec in validated_records])
 
     # --- Feature Engineering ---
     # Define Responder Label (POLS)

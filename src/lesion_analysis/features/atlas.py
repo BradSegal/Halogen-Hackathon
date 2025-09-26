@@ -40,7 +40,8 @@ class AtlasFeatureExtractor:
             labels_img=atlas.maps,
             standardize=False,  # We want lesion load, not z-scored values
             memory="nilearn_cache",
-            verbose=0,
+            verbose=5,
+            n_jobs=1,  # Force serial execution to prevent multiprocessing deadlock
         )
         # Fit the masker (required before transform)
         self.masker.fit()

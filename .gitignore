@@ -47,3 +47,5 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+/data/processed/
+/data/processed/
