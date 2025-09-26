@@ -747,6 +747,113 @@ Kurtosis: {stats.kurtosis(errors):.4f}"""
             plt.close()
             logger.info(f"Saved error analysis plot to {output_path}")
 
+    def create_cate_analysis_plots(self):
+        """Create CATE (Conditional Average Treatment Effect) analysis plots for MultiTask CNN."""
+        if not self.visualize or "MultiTask-CNN" not in self.predictions:
+            return
+
+        model_preds = self.predictions.get("MultiTask-CNN", {})
+        if "task2" not in model_preds or "cate_values" not in model_preds["task2"]:
+            return
+
+        logger.info("Creating CATE analysis plots...")
+
+        task2_preds = model_preds["task2"]
+        cate_values = np.array(task2_preds["cate_values"])
+        y_true = np.array(task2_preds["true_values"])
+
+        # Create figure with subplots
+        fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+        # CATE distribution
+        ax1 = axes[0, 0]
+        ax1.hist(cate_values, bins=30, edgecolor='black', alpha=0.7)
+        ax1.axvline(x=0, color='r', linestyle='--', label='No effect')
+        ax1.set_xlabel('CATE Value')
+        ax1.set_ylabel('Frequency')
+        ax1.set_title('Distribution of Conditional Average Treatment Effects')
+        ax1.legend()
+
+        # CATE vs actual responder status
+        ax2 = axes[0, 1]
+        responders_cate = cate_values[y_true]
+        non_responders_cate = cate_values[~y_true]
+
+        positions = [1, 2]
+        data_to_plot = [non_responders_cate, responders_cate]
+        labels = ['Non-responders', 'Responders']
+
+        bp = ax2.boxplot(data_to_plot, positions=positions, labels=labels,
+                         patch_artist=True, showfliers=True)
+        for patch, color in zip(bp['boxes'], ['coral', 'lightgreen']):
+            patch.set_facecolor(color)
+        ax2.axhline(y=0, color='r', linestyle='--', alpha=0.5)
+        ax2.set_ylabel('CATE Value')
+        ax2.set_title('CATE by True Responder Status')
+        ax2.grid(True, alpha=0.3)
+
+        # ROC-like curve for CATE-based predictions
+        ax3 = axes[1, 0]
+        thresholds = np.linspace(cate_values.min(), cate_values.max(), 100)
+        tprs = []
+        fprs = []
+
+        for thresh in thresholds:
+            pred_responders = cate_values > thresh
+            tp = np.sum(pred_responders & y_true)
+            fp = np.sum(pred_responders & ~y_true)
+            fn = np.sum(~pred_responders & y_true)
+            tn = np.sum(~pred_responders & ~y_true)
+
+            tpr = tp / (tp + fn) if (tp + fn) > 0 else 0
+            fpr = fp / (fp + tn) if (fp + tn) > 0 else 0
+
+            tprs.append(tpr)
+            fprs.append(fpr)
+
+        ax3.plot(fprs, tprs, 'b-', lw=2)
+        ax3.plot([0, 1], [0, 1], 'r--', lw=1, label='Random')
+        ax3.set_xlabel('False Positive Rate')
+        ax3.set_ylabel('True Positive Rate')
+        ax3.set_title('CATE-based Treatment Assignment ROC')
+        ax3.legend()
+        ax3.grid(True, alpha=0.3)
+
+        # Summary statistics
+        ax4 = axes[1, 1]
+        ax4.axis('off')
+
+        # Calculate statistics
+        mean_cate_responders = np.mean(responders_cate) if len(responders_cate) > 0 else 0
+        mean_cate_non_responders = np.mean(non_responders_cate) if len(non_responders_cate) > 0 else 0
+        predicted_benefit_rate = np.mean(cate_values > 0)
+        actual_responder_rate = np.mean(y_true)
+
+        stats_text = f"""CATE Analysis Summary:
+
+Mean CATE (Responders): {mean_cate_responders:.4f}
+Mean CATE (Non-responders): {mean_cate_non_responders:.4f}
+CATE Difference: {mean_cate_responders - mean_cate_non_responders:.4f}
+
+Predicted to benefit: {predicted_benefit_rate:.1%}
+Actual responders: {actual_responder_rate:.1%}
+
+Total patients: {len(cate_values)}
+CATE > 0 (predicted benefit): {np.sum(cate_values > 0)}
+CATE < 0 (predicted harm): {np.sum(cate_values < 0)}"""
+
+        ax4.text(0.1, 0.5, stats_text, transform=ax4.transAxes,
+                fontsize=11, verticalalignment='center',
+                bbox=dict(boxstyle='round', facecolor='lightgray', alpha=0.5))
+
+        plt.suptitle('MultiTask CNN - Treatment Effect Analysis', fontsize=14, fontweight='bold')
+        plt.tight_layout()
+
+        output_path = self.output_dir / "visualizations" / "cate_analysis.png"
+        plt.savefig(output_path, dpi=150, bbox_inches='tight')
+        plt.close()
+        logger.info(f"Saved CATE analysis plot to {output_path}")
+
     def create_confusion_matrices(self):
         """Create confusion matrix visualizations for classification tasks."""
         if not self.visualize:
@@ -985,6 +1092,23 @@ Kurtosis: {stats.kurtosis(errors):.4f}"""
                     rel_path = scatter_file.relative_to(self.output_dir)
                     html_content += f'<img src="{rel_path}" alt="Scatter Plot">\n'
 
+        # Add CATE analysis if exists
+        cate_plot = viz_dir / "cate_analysis.png"
+        if cate_plot.exists():
+            html_content += "<h3>Treatment Effect Analysis (MultiTask CNN)</h3>"
+            rel_path = cate_plot.relative_to(self.output_dir)
+            html_content += f'<img src="{rel_path}" alt="CATE Analysis">\n'
+
+        # Add confusion matrices
+        confusion_dir = viz_dir / "confusion_matrices"
+        if confusion_dir.exists():
+            confusion_files = list(confusion_dir.glob("*.png"))
+            if confusion_files:
+                html_content += "<h3>Confusion Matrices</h3>"
+                for conf_file in confusion_files:
+                    rel_path = conf_file.relative_to(self.output_dir)
+                    html_content += f'<img src="{rel_path}" alt="Confusion Matrix">\n'
+
         html_content += """
     </div>
 
@@ -1049,6 +1173,7 @@ Kurtosis: {stats.kurtosis(errors):.4f}"""
             self.create_prediction_scatter_plots()
             self.create_error_distribution_plots()
             self.create_confusion_matrices()
+            self.create_cate_analysis_plots()
 
         # Generate HTML report
         self.generate_html_report()
