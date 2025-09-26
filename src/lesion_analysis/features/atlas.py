@@ -7,6 +7,7 @@ from nilearn.datasets import fetch_atlas_schaefer_2018
 from nilearn.maskers import NiftiLabelsMasker
 from pathlib import Path
 import nibabel as nib
+from tqdm import tqdm
 
 
 class AtlasFeatureExtractor:
@@ -63,12 +64,14 @@ class AtlasFeatureExtractor:
         joblib.dump(self.masker, self.masker_path)
         print(f"Masker saved to {self.masker_path}")
 
-    def transform(self, df: pd.DataFrame) -> np.ndarray:
+    def transform(self, df: pd.DataFrame, batch_size: int = 100) -> np.ndarray:
         """
-        Transforms lesion files into ROI-based feature matrix.
+        Transforms lesion files into ROI-based feature matrix using batch processing.
 
         Args:
             df: DataFrame with a 'lesion_filepath' column.
+            batch_size: Number of files to process at once (default: 100).
+                       Reduce if memory issues persist.
 
         Returns:
             A numpy array of shape (n_samples, n_rois).
@@ -79,10 +82,27 @@ class AtlasFeatureExtractor:
             self.masker = joblib.load(self.masker_path)
 
         lesion_filepaths = df["lesion_filepath"].tolist()
+        n_samples = len(lesion_filepaths)
         print(
-            f"Transforming {len(lesion_filepaths)} lesions into {self.n_rois} ROI features..."
+            f"Transforming {n_samples} lesions into {self.n_rois} ROI features "
+            f"(batch_size={batch_size})..."
         )
-        return self.masker.transform(lesion_filepaths)
+
+        # Process in batches to avoid memory issues
+        all_features = []
+        n_batches = (n_samples + batch_size - 1) // batch_size  # Ceiling division
+
+        for i in tqdm(range(n_batches), desc="Processing batches"):
+            start_idx = i * batch_size
+            end_idx = min((i + 1) * batch_size, n_samples)
+            batch_filepaths = lesion_filepaths[start_idx:end_idx]
+
+            # Transform this batch
+            batch_features = self.masker.transform(batch_filepaths)
+            all_features.append(batch_features)
+
+        # Concatenate all batch results
+        return np.vstack(all_features)
 
     @staticmethod
     def memory_efficient_inverse_transform(

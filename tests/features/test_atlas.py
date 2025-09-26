@@ -315,3 +315,32 @@ def test_atlas_img_stored_after_fit(mock_fetch, temp_data_dir, mock_atlas):
     # After fit, atlas_img should be loaded
     assert extractor.atlas_img is not None
     assert isinstance(extractor.atlas_img, nib.Nifti1Image)
+
+
+@patch("src.lesion_analysis.features.atlas.fetch_atlas_schaefer_2018")
+def test_atlas_feature_extractor_batch_consistency(
+    mock_fetch, mock_dataframe, temp_data_dir, mock_atlas
+):
+    """Test that different batch sizes produce identical results."""
+    temp_dir, _ = temp_data_dir
+    mock_fetch.return_value = mock_atlas
+
+    extractor = AtlasFeatureExtractor(n_rois=4, model_dir=temp_dir)
+    extractor.fit()
+
+    # Transform with different batch sizes
+    result_batch1 = extractor.transform(mock_dataframe, batch_size=1)
+    result_batch2 = extractor.transform(mock_dataframe, batch_size=2)
+    result_batch3 = extractor.transform(mock_dataframe, batch_size=3)
+    result_batch100 = extractor.transform(mock_dataframe, batch_size=100)
+
+    # All results should be identical
+    assert np.allclose(result_batch1, result_batch2)
+    assert np.allclose(result_batch1, result_batch3)
+    assert np.allclose(result_batch1, result_batch100)
+
+    # Shape should be consistent
+    assert result_batch1.shape == (3, 4)
+    assert result_batch2.shape == (3, 4)
+    assert result_batch3.shape == (3, 4)
+    assert result_batch100.shape == (3, 4)
