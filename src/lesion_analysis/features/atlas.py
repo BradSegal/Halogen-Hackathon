@@ -6,6 +6,7 @@ import pandas as pd
 from nilearn.datasets import fetch_atlas_schaefer_2018
 from nilearn.maskers import NiftiLabelsMasker
 from pathlib import Path
+import nibabel as nib
 
 
 class AtlasFeatureExtractor:
@@ -21,6 +22,7 @@ class AtlasFeatureExtractor:
         self.model_dir.mkdir(exist_ok=True)
         self.masker_path = self.model_dir / f"{self.atlas_name}_masker.joblib"
         self.masker: NiftiLabelsMasker = None
+        self.atlas_img: nib.Nifti1Image = None
 
     def fit(self):
         """
@@ -30,11 +32,24 @@ class AtlasFeatureExtractor:
         if self.masker_path.exists():
             print(f"Masker already exists at {self.masker_path}. Loading it.")
             self.masker = joblib.load(self.masker_path)
+            # Still need to load the atlas image for inverse transform
+            print("Fetching atlas for inverse transform...")
+            atlas = fetch_atlas_schaefer_2018(n_rois=self.n_rois, resolution_mm=2)
+            # atlas.maps can be either a filepath (str) or a Nifti1Image object (in tests)
+            if isinstance(atlas.maps, str):
+                self.atlas_img = nib.load(atlas.maps)
+            else:
+                self.atlas_img = atlas.maps
             return
 
         print("Fetching atlas and creating masker...")
         # Using the 2mm resolution version to match the data
         atlas = fetch_atlas_schaefer_2018(n_rois=self.n_rois, resolution_mm=2)
+        # atlas.maps can be either a filepath (str) or a Nifti1Image object (in tests)
+        if isinstance(atlas.maps, str):
+            self.atlas_img = nib.load(atlas.maps)
+        else:
+            self.atlas_img = atlas.maps
 
         self.masker = NiftiLabelsMasker(
             labels_img=atlas.maps,
@@ -68,3 +83,34 @@ class AtlasFeatureExtractor:
             f"Transforming {len(lesion_filepaths)} lesions into {self.n_rois} ROI features..."
         )
         return self.masker.transform(lesion_filepaths)
+
+    @staticmethod
+    def memory_efficient_inverse_transform(
+        weights: np.ndarray, atlas_img: nib.Nifti1Image
+    ) -> nib.Nifti1Image:
+        """
+        A memory-efficient implementation of nilearn's inverse_transform.
+
+        Args:
+            weights: A 1D numpy array of weights (e.g., model coefficients).
+            atlas_img: The NIfTI image object of the atlas itself.
+
+        Returns:
+            A new NIfTI image with the weights projected back into 3D space.
+        """
+        if weights.ndim != 1:
+            raise ValueError("Weights must be a 1D array.")
+
+        atlas_data = atlas_img.get_fdata()
+        output_map = np.zeros_like(atlas_data, dtype=np.float32)
+
+        # The number of ROIs should match the length of the weights vector.
+        # Atlas labels are typically 1-based, so they go from 1 to n_rois.
+        num_rois = len(weights)
+
+        for i in range(num_rois):
+            roi_label = i + 1  # Atlas labels are 1-based
+            weight = weights[i]
+            output_map[atlas_data == roi_label] = weight
+
+        return nib.Nifti1Image(output_map, atlas_img.affine, atlas_img.header)

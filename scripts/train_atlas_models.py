@@ -66,13 +66,17 @@ print("\n--- Generating Atlas-Based Inference Maps ---")
 
 # Deficit Map from Task 1 model coefficients
 deficit_weights = model_task1.coef_
-deficit_map_img = feature_extractor.masker.inverse_transform(deficit_weights)
+deficit_map_img = AtlasFeatureExtractor.memory_efficient_inverse_transform(
+    deficit_weights, feature_extractor.atlas_img
+)
 deficit_map_img.to_filename(RESULTS_DIR / "deficit_map_atlas.nii.gz")
 print("Deficit map saved.")
 
 # Treatment Map from Task 2 model feature importances
 treatment_weights = model_task2.feature_importances_
-treatment_map_img = feature_extractor.masker.inverse_transform(treatment_weights)
+treatment_map_img = AtlasFeatureExtractor.memory_efficient_inverse_transform(
+    treatment_weights, feature_extractor.atlas_img
+)
 
 # Enforce subset constraint: treatment map must be a subset of deficit map
 # Binarize the deficit map (only regions with non-zero coefficients matter)
