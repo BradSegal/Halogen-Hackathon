@@ -1064,6 +1064,8 @@ class BrainLesionAnalyzer:
             map_files = {
                 'deficit_baseline': 'deficit_map_baseline.nii.gz',
                 'treatment_baseline': 'treatment_map_baseline.nii.gz',
+                'deficit_atlas': 'deficit_map_atlas.nii.gz',
+                'treatment_atlas': 'treatment_map_atlas.nii.gz',
                 'deficit_cnn': 'deficit_map_cnn.nii.gz',
                 'treatment_cnn': 'treatment_map_cnn.nii.gz'
             }
@@ -1077,9 +1079,10 @@ class BrainLesionAnalyzer:
         return self._result_maps_cache
 
     def plot_result_maps(self, map_type: str = 'deficit', slice_axis: str = 'sagittal',
-                         slice_idx: Optional[int] = None) -> go.Figure:
+                         slice_idx: Optional[int] = None, show_all: bool = False,
+                         compare_models: bool = False, model_filter: Optional[str] = None) -> go.Figure:
         """
-        Visualize result maps (deficit or treatment) with comparison between models.
+        Visualize result maps with various comparison modes.
 
         Parameters:
         -----------
@@ -1089,6 +1092,12 @@ class BrainLesionAnalyzer:
             Axis for slicing ('sagittal', 'coronal', or 'axial')
         slice_idx : int, optional
             Slice index. If None, uses center slice
+        show_all : bool
+            If True, shows all available maps in a grid
+        compare_models : bool
+            If True, compares the same map type across all models
+        model_filter : str, optional
+            Filter to show only maps from a specific model ('baseline', 'atlas', 'cnn')
 
         Returns:
         --------
@@ -1097,21 +1106,10 @@ class BrainLesionAnalyzer:
         """
         maps = self.load_result_maps()
 
-        # Get relevant maps
-        baseline_key = f'{map_type}_baseline'
-        cnn_key = f'{map_type}_cnn'
-
-        baseline_map = maps.get(baseline_key)
-        cnn_map = maps.get(cnn_key)
-
-        # Check if maps exist
-        has_baseline = baseline_map is not None
-        has_cnn = cnn_map is not None
-
-        if not has_baseline and not has_cnn:
+        if not maps:
             fig = go.Figure()
             fig.add_annotation(
-                text=f"No {map_type} maps found. Please run the generation scripts first.",
+                text="No maps found. Please run the generation scripts first.",
                 xref="paper",
                 yref="paper",
                 x=0.5,
@@ -1120,26 +1118,6 @@ class BrainLesionAnalyzer:
                 font=dict(size=14)
             )
             return fig
-
-        # Create subplots based on available maps
-        n_cols = sum([has_baseline, has_cnn])
-        if n_cols == 2:
-            n_cols = 3  # Add difference map
-
-        subplot_titles = []
-        if has_baseline:
-            subplot_titles.append(f"Baseline {map_type.capitalize()} Map")
-        if has_cnn:
-            subplot_titles.append(f"CNN {map_type.capitalize()} Map")
-        if has_baseline and has_cnn:
-            subplot_titles.append("Difference (CNN - Baseline)")
-
-        fig = make_subplots(
-            rows=1,
-            cols=n_cols,
-            subplot_titles=subplot_titles,
-            horizontal_spacing=0.1
-        )
 
         # Get slice based on axis
         def get_slice(data, axis, idx):
@@ -1153,71 +1131,341 @@ class BrainLesionAnalyzer:
             else:  # axial
                 return data[:, :, idx]
 
-        col = 1
+        if show_all:
+            # Show all available maps in a grid
+            available_maps = [(k, v) for k, v in maps.items()]
+            n_maps = len(available_maps)
 
-        # Add baseline map
-        if has_baseline:
-            baseline_slice = get_slice(baseline_map, slice_axis, slice_idx)
-            fig.add_trace(
-                go.Heatmap(
-                    z=baseline_slice.T,
-                    colorscale='RdBu_r',
-                    showscale=True,
-                    name='Baseline',
-                    colorbar=dict(title='Value', x=0.3*col-0.2)
-                ),
-                row=1,
-                col=col
-            )
-            col += 1
+            # Create grid based on number of maps (3x2 for up to 6 maps)
+            if n_maps <= 4:
+                n_rows = 2
+                n_cols = 2
+            else:
+                n_rows = 2
+                n_cols = 3
 
-        # Add CNN map
-        if has_cnn:
-            cnn_slice = get_slice(cnn_map, slice_axis, slice_idx)
-            fig.add_trace(
-                go.Heatmap(
-                    z=cnn_slice.T,
-                    colorscale='RdBu_r',
-                    showscale=True,
-                    name='CNN',
-                    colorbar=dict(title='Value', x=0.3*col-0.2)
-                ),
-                row=1,
-                col=col
-            )
-            col += 1
+            subplot_titles = [name.replace('_', ' ').title() for name, _ in available_maps[:6]]
 
-        # Add difference map if both exist
-        if has_baseline and has_cnn:
-            diff_slice = cnn_slice - baseline_slice
-            fig.add_trace(
-                go.Heatmap(
-                    z=diff_slice.T,
-                    colorscale='RdBu_r',
-                    showscale=True,
-                    name='Difference',
-                    zmid=0,
-                    colorbar=dict(title='Difference', x=0.3*col-0.2)
-                ),
-                row=1,
-                col=col
+            fig = make_subplots(
+                rows=n_rows,
+                cols=n_cols,
+                subplot_titles=subplot_titles,
+                horizontal_spacing=0.05,
+                vertical_spacing=0.1
             )
 
-        # Update layout
-        slice_info = f"{slice_axis.capitalize()} slice"
-        if slice_idx is not None:
-            slice_info += f" (index={slice_idx})"
+            for idx, (map_name, map_data) in enumerate(available_maps[:6]):
+                row = idx // n_cols + 1
+                col = idx % n_cols + 1
 
-        fig.update_layout(
-            height=500,
-            title_text=f"{map_type.capitalize()} Substrate Maps - {slice_info}",
-            showlegend=False
-        )
+                map_slice = get_slice(map_data, slice_axis, slice_idx)
 
-        # Update axes
-        for i in range(1, n_cols + 1):
-            fig.update_xaxes(title_text="Y (left-right)", row=1, col=i)
-            fig.update_yaxes(title_text="Z (inferior-superior)", row=1, col=i)
+                # Determine colorscale based on map type and model
+                if 'deficit' in map_name:
+                    if 'baseline' in map_name:
+                        colorscale = 'Oranges'
+                    elif 'atlas' in map_name:
+                        colorscale = 'Reds'
+                    else:  # CNN
+                        colorscale = 'hot'
+                elif 'treatment' in map_name:
+                    if 'baseline' in map_name:
+                        colorscale = 'Blues'
+                    elif 'atlas' in map_name:
+                        colorscale = 'Purples'
+                    else:  # CNN
+                        colorscale = 'Viridis'
+                else:
+                    colorscale = 'RdBu_r'
+
+                fig.add_trace(
+                    go.Heatmap(
+                        z=map_slice.T,
+                        colorscale=colorscale,
+                        showscale=True,
+                        name=subplot_titles[idx] if idx < len(subplot_titles) else '',
+                        colorbar=dict(
+                            title='Value',
+                            x=1.02 if col == n_cols else (0.45 if col == 1 else 0.73),
+                            y=0.75 if row == 1 else 0.25,
+                            len=0.4
+                        )
+                    ),
+                    row=row,
+                    col=col
+                )
+
+            slice_info = f"{slice_axis.capitalize()} slice"
+            if slice_idx is not None:
+                slice_info += f" (index={slice_idx})"
+
+            fig.update_layout(
+                height=800,
+                title_text=f"All Substrate Maps - {slice_info}",
+                showlegend=False
+            )
+
+            # Update axes
+            for row in range(1, n_rows + 1):
+                for col in range(1, n_cols + 1):
+                    fig.update_xaxes(title_text="Y", row=row, col=col)
+                    fig.update_yaxes(title_text="Z", row=row, col=col)
+
+        elif compare_models:
+            # Compare same map type across all models
+            model_maps = {}
+            for key, data in maps.items():
+                if map_type in key:
+                    model_name = key.replace(f'{map_type}_', '')
+                    model_maps[model_name] = data
+
+            if not model_maps:
+                fig = go.Figure()
+                fig.add_annotation(
+                    text=f"No {map_type} maps found.",
+                    xref="paper",
+                    yref="paper",
+                    x=0.5,
+                    y=0.5,
+                    showarrow=False,
+                    font=dict(size=14)
+                )
+                return fig
+
+            n_cols = len(model_maps)
+            subplot_titles = [f"{model.capitalize()} {map_type.capitalize()}"
+                            for model in model_maps.keys()]
+
+            fig = make_subplots(
+                rows=1,
+                cols=n_cols,
+                subplot_titles=subplot_titles,
+                horizontal_spacing=0.05
+            )
+
+            for idx, (model_name, map_data) in enumerate(model_maps.items()):
+                map_slice = get_slice(map_data, slice_axis, slice_idx)
+
+                # Model-specific colorscales
+                if map_type == 'deficit':
+                    colorscales = {'baseline': 'Oranges', 'atlas': 'Reds', 'cnn': 'hot'}
+                else:
+                    colorscales = {'baseline': 'Blues', 'atlas': 'Purples', 'cnn': 'Viridis'}
+
+                colorscale = colorscales.get(model_name, 'RdBu_r')
+
+                fig.add_trace(
+                    go.Heatmap(
+                        z=map_slice.T,
+                        colorscale=colorscale,
+                        showscale=True,
+                        name=model_name.capitalize(),
+                        colorbar=dict(
+                            title='Value',
+                            x=-0.1 + (idx+1) * 1.05/n_cols,
+                            len=0.5
+                        )
+                    ),
+                    row=1,
+                    col=idx + 1
+                )
+
+            slice_info = f"{slice_axis.capitalize()} slice"
+            if slice_idx is not None:
+                slice_info += f" (index={slice_idx})"
+
+            fig.update_layout(
+                height=500,
+                title_text=f"{map_type.capitalize()} Maps - Model Comparison - {slice_info}",
+                showlegend=False
+            )
+
+            for i in range(1, n_cols + 1):
+                fig.update_xaxes(title_text="Y (left-right)", row=1, col=i)
+                fig.update_yaxes(title_text="Z (inferior-superior)", row=1, col=i)
+
+        else:
+            # Original behavior - show specific map type with optional model filter
+            if model_filter:
+                # Show only maps from specified model
+                filtered_maps = {k: v for k, v in maps.items()
+                               if map_type in k and model_filter in k}
+
+                if not filtered_maps:
+                    fig = go.Figure()
+                    fig.add_annotation(
+                        text=f"No {map_type} maps found for {model_filter} model.",
+                        xref="paper",
+                        yref="paper",
+                        x=0.5,
+                        y=0.5,
+                        showarrow=False,
+                        font=dict(size=14)
+                    )
+                    return fig
+
+                # Display single filtered map
+                map_name, map_data = next(iter(filtered_maps.items()))
+                map_slice = get_slice(map_data, slice_axis, slice_idx)
+
+                # Determine colorscale
+                if 'deficit' in map_name:
+                    colorscales = {'baseline': 'Oranges', 'atlas': 'Reds', 'cnn': 'hot'}
+                else:
+                    colorscales = {'baseline': 'Blues', 'atlas': 'Purples', 'cnn': 'Viridis'}
+
+                colorscale = colorscales.get(model_filter, 'RdBu_r')
+
+                fig = go.Figure(
+                    data=go.Heatmap(
+                        z=map_slice.T,
+                        colorscale=colorscale,
+                        showscale=True,
+                        colorbar=dict(title='Value')
+                    )
+                )
+
+                slice_info = f"{slice_axis.capitalize()} slice"
+                if slice_idx is not None:
+                    slice_info += f" (index={slice_idx})"
+
+                fig.update_layout(
+                    height=500,
+                    title_text=f"{model_filter.capitalize()} {map_type.capitalize()} Map - {slice_info}",
+                    xaxis_title="Y (left-right)",
+                    yaxis_title="Z (inferior-superior)"
+                )
+
+                return fig
+
+            # Default: Compare baseline and CNN for backward compatibility
+            baseline_key = f'{map_type}_baseline'
+            atlas_key = f'{map_type}_atlas'
+            cnn_key = f'{map_type}_cnn'
+
+            baseline_map = maps.get(baseline_key)
+            atlas_map = maps.get(atlas_key)
+            cnn_map = maps.get(cnn_key)
+
+            # Check if maps exist
+            has_baseline = baseline_map is not None
+            has_atlas = atlas_map is not None
+            has_cnn = cnn_map is not None
+
+            if not has_baseline and not has_atlas and not has_cnn:
+                fig = go.Figure()
+                fig.add_annotation(
+                    text=f"No {map_type} maps found. Please run the generation scripts first.",
+                    xref="paper",
+                    yref="paper",
+                    x=0.5,
+                    y=0.5,
+                    showarrow=False,
+                    font=dict(size=14)
+                )
+                return fig
+
+            # Create subplots based on available maps
+            n_cols = sum([has_baseline, has_atlas, has_cnn])
+
+            subplot_titles = []
+            if has_baseline:
+                subplot_titles.append(f"Baseline")
+            if has_atlas:
+                subplot_titles.append(f"Atlas")
+            if has_cnn:
+                subplot_titles.append(f"CNN")
+
+            fig = make_subplots(
+                rows=1,
+                cols=n_cols,
+                subplot_titles=subplot_titles,
+                horizontal_spacing=0.05
+            )
+
+            col = 1
+
+            # Model-specific colorscales
+            if map_type == 'deficit':
+                colorscales = {'baseline': 'Oranges', 'atlas': 'Reds', 'cnn': 'hot'}
+            else:
+                colorscales = {'baseline': 'Blues', 'atlas': 'Purples', 'cnn': 'Viridis'}
+
+            # Add baseline map
+            if has_baseline:
+                baseline_slice = get_slice(baseline_map, slice_axis, slice_idx)
+                fig.add_trace(
+                    go.Heatmap(
+                        z=baseline_slice.T,
+                        colorscale=colorscales['baseline'],
+                        showscale=True,
+                        name='Baseline',
+                        colorbar=dict(
+                            title='Value',
+                            x=-0.15 if n_cols == 3 else (-0.1 if n_cols == 2 else 1.02),
+                            len=0.5
+                        )
+                    ),
+                    row=1,
+                    col=col
+                )
+                col += 1
+
+            # Add atlas map
+            if has_atlas:
+                atlas_slice = get_slice(atlas_map, slice_axis, slice_idx)
+                fig.add_trace(
+                    go.Heatmap(
+                        z=atlas_slice.T,
+                        colorscale=colorscales['atlas'],
+                        showscale=True,
+                        name='Atlas',
+                        colorbar=dict(
+                            title='Value',
+                            x=0.45 if n_cols == 3 else (1.02 if n_cols == 2 else 1.02),
+                            len=0.5
+                        )
+                    ),
+                    row=1,
+                    col=col
+                )
+                col += 1
+
+            # Add CNN map
+            if has_cnn:
+                cnn_slice = get_slice(cnn_map, slice_axis, slice_idx)
+                fig.add_trace(
+                    go.Heatmap(
+                        z=cnn_slice.T,
+                        colorscale=colorscales['cnn'],
+                        showscale=True,
+                        name='CNN',
+                        colorbar=dict(
+                            title='Value',
+                            x=1.05 if n_cols == 3 else 1.02,
+                            len=0.5
+                        )
+                    ),
+                    row=1,
+                    col=col
+                )
+                col += 1
+
+            # Update layout
+            slice_info = f"{slice_axis.capitalize()} slice"
+            if slice_idx is not None:
+                slice_info += f" (index={slice_idx})"
+
+            fig.update_layout(
+                height=500,
+                title_text=f"{map_type.capitalize()} Substrate Maps - {slice_info}",
+                showlegend=False
+            )
+
+            # Update axes
+            for i in range(1, n_cols + 1):
+                fig.update_xaxes(title_text="Y (left-right)", row=1, col=i)
+                fig.update_yaxes(title_text="Z (inferior-superior)", row=1, col=i)
 
         return fig
 

@@ -1078,32 +1078,33 @@ def show_cnn_substrate_maps(analyzer):
         - **Difference**: Shows where CNN and baseline maps diverge
         """)
 
+    # View mode selection
+    view_mode = st.radio(
+        "View Mode",
+        ["Compare Models (Side-by-side)", "All Maps (Grid View)", "Single Map Type"],
+        horizontal=True
+    )
+
     # Controls
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        map_type = st.selectbox(
-            "Select Map Type",
-            ["deficit", "treatment"],
-            format_func=lambda x: x.capitalize()
-        )
-
-    with col2:
         slice_axis = st.selectbox(
             "Select View",
             ["sagittal", "coronal", "axial"],
             format_func=lambda x: x.capitalize()
         )
 
-    with col3:
-        # Get the maps to determine slice range
-        maps = analyzer.load_result_maps()
-        if maps:
-            # Get the first available map to determine dimensions
-            sample_map = next(iter(maps.values()))
-            axis_idx = {'sagittal': 0, 'coronal': 1, 'axial': 2}[slice_axis]
-            max_slice = sample_map.shape[axis_idx] - 1
+    # Get the maps to determine slice range
+    maps = analyzer.load_result_maps()
 
+    if maps:
+        # Get the first available map to determine dimensions
+        sample_map = next(iter(maps.values()))
+        axis_idx = {'sagittal': 0, 'coronal': 1, 'axial': 2}[slice_axis]
+        max_slice = sample_map.shape[axis_idx] - 1
+
+        with col2:
             slice_idx = st.slider(
                 "Slice Index",
                 min_value=0,
@@ -1111,14 +1112,44 @@ def show_cnn_substrate_maps(analyzer):
                 value=max_slice // 2,
                 help=f"Navigate through {slice_axis} slices"
             )
-        else:
-            slice_idx = None
-            st.info("No maps available")
 
-    # Display the maps
-    if maps:
-        fig = analyzer.plot_result_maps(map_type, slice_axis, slice_idx)
+        if view_mode == "Single Map Type":
+            with col3:
+                map_type = st.selectbox(
+                    "Map Type",
+                    ["deficit", "treatment"],
+                    format_func=lambda x: x.capitalize()
+                )
+            show_all = False
+        elif view_mode == "All Maps (Grid View)":
+            map_type = "deficit"  # Default, not used when show_all=True
+            show_all = True
+        else:  # Compare Models
+            with col3:
+                map_type = st.selectbox(
+                    "Map Type to Compare",
+                    ["deficit", "treatment"],
+                    format_func=lambda x: x.capitalize()
+                )
+            show_all = False
+
+        # Display the maps
+        fig = analyzer.plot_result_maps(map_type, slice_axis, slice_idx, show_all=show_all)
         st.plotly_chart(fig, use_container_width=True)
+
+        # Show available maps summary
+        st.subheader("📂 Available Maps")
+        available_maps = analyzer.load_result_maps()
+        if available_maps:
+            cols = st.columns(len(available_maps))
+            for idx, (map_name, map_data) in enumerate(available_maps.items()):
+                with cols[idx]:
+                    non_zero = np.sum(map_data != 0)
+                    st.metric(
+                        label=map_name.replace('_', ' ').title(),
+                        value=f"{non_zero:,} voxels",
+                        delta=f"{(non_zero/map_data.size)*100:.1f}% active"
+                    )
 
         # Add export options
         st.subheader("📥 Export Options")
@@ -1129,16 +1160,18 @@ def show_cnn_substrate_maps(analyzer):
                 st.info("To save the image, right-click on the plot and select 'Save as image'")
 
         with col2:
-            available_maps = analyzer.load_result_maps()
-            if available_maps:
-                map_names = list(available_maps.keys())
-                st.multiselect(
-                    "Available Maps",
-                    map_names,
-                    default=map_names,
-                    disabled=True,
-                    help="These maps are available in the results directory"
-                )
+            if st.button("ℹ️ Map Information"):
+                with st.expander("Map Details", expanded=True):
+                    for map_name in available_maps.keys():
+                        st.write(f"**{map_name.replace('_', ' ').title()}**")
+                        if 'baseline' in map_name:
+                            st.write("- Method: Traditional lesion-symptom mapping")
+                        elif 'cnn' in map_name:
+                            st.write("- Method: CNN saliency/gradient analysis")
+                        if 'deficit' in map_name:
+                            st.write("- Purpose: Identifies regions associated with clinical deficits")
+                        elif 'treatment' in map_name:
+                            st.write("- Purpose: Identifies regions predictive of treatment response")
     else:
         st.warning("No result maps found. Please run the model training and map generation scripts first.")
 
