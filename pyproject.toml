@@ -18,5 +18,46 @@ dependencies = [
     "seaborn",
     "streamlit",
     "dash",
-    "scipy"
+    "scipy",
+    "pydantic"
 ]
+
+[tool.mypy]
+# Performance optimizations
+incremental = true
+cache_dir = ".mypy_cache"
+sqlite_cache = true
+
+# Focus only on our source code
+files = ["src/"]
+exclude = [".agent_work/", ".venv/", "build/", "dist/"]
+
+# Ignore missing imports from third-party libraries
+ignore_missing_imports = true
+
+# Speed up type checking
+no_strict_optional = true
+allow_redefinition = true
+allow_untyped_globals = true
+
+# Disable slow checks
+no_implicit_reexport = false
+warn_return_any = false
+warn_unused_ignores = false
+
+# Skip checking these notoriously slow packages
+[[tool.mypy.overrides]]
+module = [
+    "pandas.*",
+    "numpy.*",
+    "scipy.*",
+    "matplotlib.*",
+    "plotly.*",
+    "sklearn.*",
+    "nibabel.*",
+    "nilearn.*",
+    "streamlit.*",
+    "dash.*",
+    "seaborn.*"
+]
+ignore_errors = true

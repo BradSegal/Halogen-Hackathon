@@ -1,0 +1,43 @@
+{
+  "ticket": {
+    "id": "",
+    "title": "",
+    "phase": "initialization",
+    "iteration": 1
+  },
+  "requirements": {
+    "extracted": [],
+    "architectural_principles": []
+  },
+  "discoveries": {
+    "codebase_analysis": {},
+    "technical_constraints": [],
+    "dependencies": []
+  },
+  "decisions": {
+    "architectural": [],
+    "implementation": [],
+    "testing": []
+  },
+  "challenges": {
+    "encountered": [],
+    "patterns": [],
+    "solutions": []
+  },
+  "artifacts": {
+    "created": [],
+    "modified": [],
+    "deleted": []
+  },
+  "validation": {
+    "requirements_coverage": [],
+    "compliance_status": {},
+    "test_results": []
+  },
+  "lessons_learned": {
+    "technical": [],
+    "process": [],
+    "anti_patterns": []
+  },
+  "next_steps": []
+}

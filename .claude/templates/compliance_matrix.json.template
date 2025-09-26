@@ -1,0 +1,19 @@
+{
+  "ticket_id": "",
+  "requirements": [],
+  "acceptance_criteria": [],
+  "testing_requirements": [],
+  "definition_of_done": [],
+  "compliance_tracking": {
+    "requirements": {},
+    "acceptance_criteria": {},
+    "testing_requirements": {},
+    "definition_of_done": {}
+  },
+  "validation_status": {
+    "overall_compliance": false,
+    "percentage_complete": 0,
+    "blockers": [],
+    "risks": []
+  }
+}
