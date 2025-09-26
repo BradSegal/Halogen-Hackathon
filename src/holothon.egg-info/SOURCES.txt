@@ -1,0 +1,7 @@
+pyproject.toml
+src/tasks.py
+src/holothon.egg-info/PKG-INFO
+src/holothon.egg-info/SOURCES.txt
+src/holothon.egg-info/dependency_links.txt
+src/holothon.egg-info/requires.txt
+src/holothon.egg-info/top_level.txt
