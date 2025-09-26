@@ -14,7 +14,6 @@ import pandas as pd
 import plotly.express as px
 from pathlib import Path
 import sys
-import warnings
 
 # Add src to path for imports
 sys.path.append(str(Path(__file__).parent))
