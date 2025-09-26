@@ -237,8 +237,8 @@ def train_model(task: str, smoke_test: bool = False, train_on_all: bool = False)
         train_path, val_path, task, smoke_test=smoke_test, train_on_all=train_on_all
     )
 
-    # Model setup
-    model = Simple3DCNN(num_classes=1, dropout_rate=0).to(device)
+    # Model setup with dropout enabled
+    model = Simple3DCNN(num_classes=1, dropout_rate=0.5).to(device)
     logger.info(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 
     # Loss and optimizer
@@ -250,7 +250,16 @@ def train_model(task: str, smoke_test: bool = False, train_on_all: bool = False)
             pos_weight=pos_weight.to(device) if pos_weight else None
         )
 
-    optimizer = torch.optim.SGD(model.parameters(), lr=1e-2)  # , weight_decay=1e-2)
+    # OPTIMAL CONFIGURATION: AdamW optimizer
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-2)
+
+    # OPTIMAL CONFIGURATION: Learning Rate Scheduler
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer,
+        mode="min" if task == "task1" else "max",  # min for RMSE, max for B.Acc
+        factor=0.1,
+        patience=3,
+    )
 
     # Training parameters
     max_epochs = 2 if smoke_test else 50
@@ -287,6 +296,9 @@ def train_model(task: str, smoke_test: bool = False, train_on_all: bool = False)
         logger.info(
             f"Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}, Val {metric_name}: {metric_value:.4f}"
         )
+
+        # Step the scheduler with the validation metric
+        scheduler.step(metric_value)
 
         # Early stopping logic
         improved = False

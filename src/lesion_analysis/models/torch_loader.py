@@ -92,7 +92,9 @@ class LesionDataset(Dataset):
         else:
             # Encode treatment assignment 'W'. Control=0, Treatment=1.
             # If 'treatment_assignment' is NaN/None, default to 0 (it won't be used for outcome loss anyway).
-            treatment_val = 1 if record.get("treatment_assignment") == "Treatment" else 0
+            treatment_val = (
+                1 if record.get("treatment_assignment") == "Treatment" else 0
+            )
 
             targets = {
                 "severity": torch.tensor(

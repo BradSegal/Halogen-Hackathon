@@ -236,8 +236,14 @@ def train_model(smoke_test: bool = False):
     model = MultiTaskCNN(dropout_rate=0.5).to(device)
     logger.info(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 
-    # Optimizer
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
+    # OPTIMAL CONFIGURATION: AdamW optimizer
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-2)
+
+    # OPTIMAL CONFIGURATION: Learning Rate Scheduler
+    # For multi-task, we monitor the combined validation loss
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.1, patience=3
+    )
 
     # Training parameters
     max_epochs = 2 if smoke_test else 50
@@ -273,6 +279,9 @@ def train_model(smoke_test: bool = False):
         logger.info(f"Val Severity RMSE: {severity_rmse:.4f}")
         if not np.isnan(outcome_rmse):
             logger.info(f"Val Outcome RMSE: {outcome_rmse:.4f}")
+
+        # Step the scheduler with the validation loss
+        scheduler.step(val_loss)
 
         # For early stopping, use a combined metric (average of RMSEs)
         if not np.isnan(outcome_rmse):

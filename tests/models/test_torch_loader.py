@@ -97,12 +97,16 @@ class TestLesionDataset:
         # Check severity target
         assert targets["severity"].shape == (), "Severity should be a scalar"
         assert targets["severity"].dtype == torch.float32
-        assert pytest.approx(targets["severity"].item()) == 5.0  # First row's clinical_score
+        assert (
+            pytest.approx(targets["severity"].item()) == 5.0
+        )  # First row's clinical_score
 
         # Check outcome target
         assert targets["outcome"].shape == (), "Outcome should be a scalar"
         assert targets["outcome"].dtype == torch.float32
-        assert pytest.approx(targets["outcome"].item()) == 2.1  # First row's outcome_score
+        assert (
+            pytest.approx(targets["outcome"].item()) == 2.1
+        )  # First row's outcome_score
 
         # Check treatment target
         assert targets["treatment"].shape == (), "Treatment should be a scalar"
@@ -211,7 +215,9 @@ class TestLesionDataset:
         # Second sample should have NaN outcome
         _, targets = dataset[1]
         assert torch.isnan(targets["outcome"]), "Second sample should have NaN outcome"
-        assert pytest.approx(targets["severity"].item()) == 3.2  # But severity should be valid
+        assert (
+            pytest.approx(targets["severity"].item()) == 3.2
+        )  # But severity should be valid
 
     def test_dataset_consistent_loading(self, mock_dataframe):
         """Test that loading the same item multiple times gives consistent results."""

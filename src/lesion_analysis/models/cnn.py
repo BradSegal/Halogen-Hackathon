@@ -44,19 +44,21 @@ class Simple3DCNN(nn.Module):
         self.net = nn.Sequential(
             # Block 1
             nn.Conv3d(in_channels, 8, kernel_size=3, padding=1),
-            nn.BatchNorm3d(8),  # Normalizes activations, acts as regularizer
+            nn.GroupNorm(
+                num_groups=4, num_channels=8
+            ),  # Batch-size independent normalization
             nn.ReLU(),
             nn.MaxPool3d(2),  # Aggressively downsample (91,109,91) -> (45,54,45)
             nn.Dropout3d(dropout_rate),  # High dropout rate
             # Block 2
             nn.Conv3d(8, 16, kernel_size=3, padding=1),
-            nn.BatchNorm3d(16),
+            nn.GroupNorm(num_groups=8, num_channels=16),
             nn.ReLU(),
             nn.MaxPool3d(2),  # -> (22, 27, 22)
             nn.Dropout3d(dropout_rate),
             # Block 3
             nn.Conv3d(16, 32, kernel_size=3, padding=1),
-            nn.BatchNorm3d(32),
+            nn.GroupNorm(num_groups=16, num_channels=32),
             nn.ReLU(),
             nn.MaxPool3d(2),  # -> (11, 13, 11)
             nn.Dropout3d(dropout_rate),
@@ -120,17 +122,20 @@ class MultiTaskCNN(nn.Module):
         # Shared Backbone extracts a feature vector from the 3D lesion map
         self.backbone = nn.Sequential(
             nn.Conv3d(in_channels, 8, kernel_size=3, padding=1),
-            nn.BatchNorm3d(8),
+            nn.GroupNorm(num_groups=4, num_channels=8),
             nn.ReLU(),
             nn.MaxPool3d(2),
             nn.Dropout3d(dropout_rate),
             nn.Conv3d(8, 16, kernel_size=3, padding=1),
-            nn.BatchNorm3d(16),
+            nn.GroupNorm(num_groups=8, num_channels=16),
             nn.ReLU(),
             nn.MaxPool3d(2),
             nn.Dropout3d(dropout_rate),
             nn.Conv3d(16, backbone_features, kernel_size=3, padding=1),
-            nn.BatchNorm3d(backbone_features),
+            nn.GroupNorm(
+                num_groups=min(16, backbone_features // 2),
+                num_channels=backbone_features,
+            ),
             nn.ReLU(),
             nn.MaxPool3d(2),
             nn.Dropout3d(dropout_rate),

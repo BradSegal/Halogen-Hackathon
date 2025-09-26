@@ -6,6 +6,7 @@ without requiring actual training or data loading.
 """
 
 import torch
+import torch.nn as nn
 import sys
 from pathlib import Path
 
@@ -155,6 +156,29 @@ class TestSimple3DCNN:
         # Check that model parameters have gradients
         for name, param in model.named_parameters():
             assert param.grad is not None, f"No gradient for parameter {name}"
+
+    def test_model_uses_groupnorm(self):
+        """Test that model uses GroupNorm instead of BatchNorm3d."""
+        model = Simple3DCNN()
+
+        # Check that model contains GroupNorm layers
+        has_groupnorm = False
+        has_batchnorm = False
+
+        for module in model.modules():
+            if isinstance(module, nn.GroupNorm):
+                has_groupnorm = True
+            if isinstance(module, nn.BatchNorm3d):
+                has_batchnorm = True
+
+        assert has_groupnorm, "Model should contain GroupNorm layers"
+        assert not has_batchnorm, "Model should not contain BatchNorm3d layers"
+
+        # Count the number of GroupNorm layers (should be 3 for the 3 blocks)
+        groupnorm_count = sum(1 for m in model.modules() if isinstance(m, nn.GroupNorm))
+        assert (
+            groupnorm_count == 3
+        ), f"Expected 3 GroupNorm layers, got {groupnorm_count}"
 
 
 class TestMultiTaskCNN:
@@ -318,3 +342,28 @@ class TestMultiTaskCNN:
         # Should be identical in eval mode
         assert torch.allclose(output1["severity"], output2["severity"])
         assert torch.allclose(output1["outcome"], output2["outcome"])
+
+    def test_model_uses_groupnorm(self):
+        """Test that model uses GroupNorm instead of BatchNorm3d."""
+        model = MultiTaskCNN()
+
+        # Check that model contains GroupNorm layers
+        has_groupnorm = False
+        has_batchnorm = False
+
+        for module in model.modules():
+            if isinstance(module, nn.GroupNorm):
+                has_groupnorm = True
+            if isinstance(module, nn.BatchNorm3d):
+                has_batchnorm = True
+
+        assert has_groupnorm, "Model should contain GroupNorm layers"
+        assert not has_batchnorm, "Model should not contain BatchNorm3d layers"
+
+        # Count the number of GroupNorm layers in the backbone (should be 3)
+        groupnorm_count = sum(
+            1 for m in model.backbone.modules() if isinstance(m, nn.GroupNorm)
+        )
+        assert (
+            groupnorm_count == 3
+        ), f"Expected 3 GroupNorm layers in backbone, got {groupnorm_count}"
