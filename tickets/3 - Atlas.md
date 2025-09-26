@@ -24,11 +24,11 @@ This approach is chosen for its optimal balance of performance, interpretability
 
 **Step 1: Anatomical Registration Verification (EDA Notebook)**
 
-1.  Create a new Jupyter Notebook: `notebooks/01_data_validation.ipynb`.
+1.  Create a new Jupyter Notebook: `notebooks/04_data_validation.ipynb`.
 2.  Add the following code to compute and visualize a mean lesion map overlaid on the MNI template.
 
     ```python
-    # File: notebooks/01_data_validation.ipynb
+    # File: notebooks/04_data_validation.ipynb
     
     import pandas as pd
     import numpy as np

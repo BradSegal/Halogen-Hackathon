@@ -209,21 +209,21 @@ class BrainLesionAnalyzer:
         """
         # Filter treatment data
         treatment_data = self.tasks_df[
-            (self.tasks_df["Treatment assignment"].isin(["Treatment", "Control"]))
-            & (self.tasks_df["Outcome score"].notna())
+            (self.tasks_df["treatment_assignment"].isin(["Treatment", "Control"]))
+            & (self.tasks_df["outcome_score"].notna())
         ].copy()
 
         # Calculate improvement scores
         treatment_data["Improvement"] = (
-            treatment_data["Clinical score"] - treatment_data["Outcome score"]
+            treatment_data["clinical_score"] - treatment_data["outcome_score"]
         )
 
         # Separate groups
         treatment_group = treatment_data[
-            treatment_data["Treatment assignment"] == "Treatment"
+            treatment_data["treatment_assignment"] == "Treatment"
         ]["Improvement"]
         control_group = treatment_data[
-            treatment_data["Treatment assignment"] == "Control"
+            treatment_data["treatment_assignment"] == "Control"
         ]["Improvement"]
 
         # Statistical tests
@@ -288,11 +288,11 @@ class BrainLesionAnalyzer:
 
         # Get treatment data
         treatment_data = self.tasks_df[
-            (self.tasks_df["Treatment assignment"].isin(["Treatment", "Control"]))
-            & (self.tasks_df["Outcome score"].notna())
+            (self.tasks_df["treatment_assignment"].isin(["Treatment", "Control"]))
+            & (self.tasks_df["outcome_score"].notna())
         ].copy()
         treatment_data["Improvement"] = (
-            treatment_data["Clinical score"] - treatment_data["Outcome score"]
+            treatment_data["clinical_score"] - treatment_data["outcome_score"]
         )
 
         # Create subplots
@@ -313,10 +313,10 @@ class BrainLesionAnalyzer:
 
         # 1. Improvement distribution
         treatment_group = treatment_data[
-            treatment_data["Treatment assignment"] == "Treatment"
+            treatment_data["treatment_assignment"] == "Treatment"
         ]["Improvement"]
         control_group = treatment_data[
-            treatment_data["Treatment assignment"] == "Control"
+            treatment_data["treatment_assignment"] == "Control"
         ]["Improvement"]
 
         fig.add_trace(
@@ -360,12 +360,12 @@ class BrainLesionAnalyzer:
 
         # 3. Before vs After
         for group, color in [("Treatment", "blue"), ("Control", "red")]:
-            group_data = treatment_data[treatment_data["Treatment assignment"] == group]
+            group_data = treatment_data[treatment_data["treatment_assignment"] == group]
 
             fig.add_trace(
                 go.Scatter(
-                    x=group_data["Clinical score"],
-                    y=group_data["Outcome score"],
+                    x=group_data["clinical_score"],
+                    y=group_data["outcome_score"],
                     mode="markers",
                     name=f"{group} (Before vs After)",
                     marker=dict(color=color, opacity=0.6),
@@ -377,8 +377,8 @@ class BrainLesionAnalyzer:
 
         # Add diagonal line
         max_score = max(
-            treatment_data["Clinical score"].max(),
-            treatment_data["Outcome score"].max(),
+            treatment_data["clinical_score"].max(),
+            treatment_data["outcome_score"].max(),
         )
         fig.add_trace(
             go.Scatter(
@@ -396,10 +396,10 @@ class BrainLesionAnalyzer:
         # 4. Improvement by baseline severity
         fig.add_trace(
             go.Scatter(
-                x=treatment_data[treatment_data["Treatment assignment"] == "Treatment"][
-                    "Clinical score"
+                x=treatment_data[treatment_data["treatment_assignment"] == "Treatment"][
+                    "clinical_score"
                 ],
-                y=treatment_data[treatment_data["Treatment assignment"] == "Treatment"][
+                y=treatment_data[treatment_data["treatment_assignment"] == "Treatment"][
                     "Improvement"
                 ],
                 mode="markers",
@@ -413,10 +413,10 @@ class BrainLesionAnalyzer:
 
         fig.add_trace(
             go.Scatter(
-                x=treatment_data[treatment_data["Treatment assignment"] == "Control"][
-                    "Clinical score"
+                x=treatment_data[treatment_data["treatment_assignment"] == "Control"][
+                    "clinical_score"
                 ],
-                y=treatment_data[treatment_data["Treatment assignment"] == "Control"][
+                y=treatment_data[treatment_data["treatment_assignment"] == "Control"][
                     "Improvement"
                 ],
                 mode="markers",
@@ -486,12 +486,12 @@ class BrainLesionAnalyzer:
         """
         # Get treatment data
         treatment_data = self.tasks_df[
-            (self.tasks_df["Treatment assignment"] == "Treatment")
-            & (self.tasks_df["Outcome score"].notna())
+            (self.tasks_df["treatment_assignment"] == "Treatment")
+            & (self.tasks_df["outcome_score"].notna())
         ].copy()
 
         treatment_data["Improvement"] = (
-            treatment_data["Clinical score"] - treatment_data["Outcome score"]
+            treatment_data["clinical_score"] - treatment_data["outcome_score"]
         )
         treatment_data["Responder"] = treatment_data["Improvement"] >= min_improvement
 
@@ -724,26 +724,26 @@ class BrainLesionAnalyzer:
             stats_dict = {
                 "cluster_id": cluster_id,
                 "n_patients": len(cluster_data),
-                "mean_clinical_score": cluster_data["Clinical score"].mean(),
-                "std_clinical_score": cluster_data["Clinical score"].std(),
+                "mean_clinical_score": cluster_data["clinical_score"].mean(),
+                "std_clinical_score": cluster_data["clinical_score"].std(),
                 "treatment_patients": len(
-                    cluster_data[cluster_data["Treatment assignment"] == "Treatment"]
+                    cluster_data[cluster_data["treatment_assignment"] == "Treatment"]
                 ),
                 "control_patients": len(
-                    cluster_data[cluster_data["Treatment assignment"] == "Control"]
+                    cluster_data[cluster_data["treatment_assignment"] == "Control"]
                 ),
             }
 
             # Calculate mean improvement for treatment patients
             treatment_cluster = cluster_data[
-                (cluster_data["Treatment assignment"] == "Treatment")
-                & (cluster_data["Outcome score"].notna())
+                (cluster_data["treatment_assignment"] == "Treatment")
+                & (cluster_data["outcome_score"].notna())
             ]
 
             if len(treatment_cluster) > 0:
                 improvements = (
-                    treatment_cluster["Clinical score"]
-                    - treatment_cluster["Outcome score"]
+                    treatment_cluster["clinical_score"]
+                    - treatment_cluster["outcome_score"]
                 )
                 stats_dict["mean_improvement"] = improvements.mean()
                 stats_dict["response_rate"] = (improvements > 0).mean()
@@ -895,16 +895,16 @@ class BrainLesionAnalyzer:
             "dataset_summary": {
                 "total_patients": len(self.tasks_df),
                 "patients_with_deficits": len(
-                    self.tasks_df[self.tasks_df["Clinical score"] > 0]
+                    self.tasks_df[self.tasks_df["clinical_score"] > 0]
                 ),
                 "treatment_patients": len(
-                    self.tasks_df[self.tasks_df["Treatment assignment"] == "Treatment"]
+                    self.tasks_df[self.tasks_df["treatment_assignment"] == "Treatment"]
                 ),
                 "control_patients": len(
-                    self.tasks_df[self.tasks_df["Treatment assignment"] == "Control"]
+                    self.tasks_df[self.tasks_df["treatment_assignment"] == "Control"]
                 ),
-                "mean_clinical_score": self.tasks_df["Clinical score"].mean(),
-                "std_clinical_score": self.tasks_df["Clinical score"].std(),
+                "mean_clinical_score": self.tasks_df["clinical_score"].mean(),
+                "std_clinical_score": self.tasks_df["clinical_score"].std(),
             }
         }
 
@@ -932,7 +932,7 @@ class BrainLesionAnalyzer:
                 "mean_volume": volume_df["volume"].mean(),
                 "std_volume": volume_df["volume"].std(),
                 "volume_clinical_correlation": volume_df["volume"].corr(
-                    volume_df["Clinical score"]
+                    volume_df["clinical_score"]
                 ),
             }
         except Exception as e:

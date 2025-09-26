@@ -111,17 +111,17 @@ def show_dataset_overview(visualizer, tasks_df):
         st.metric("Total Patients", len(tasks_df))
 
     with col2:
-        patients_with_deficits = len(tasks_df[tasks_df["Clinical score"] > 0])
+        patients_with_deficits = len(tasks_df[tasks_df["clinical_score"] > 0])
         st.metric("Patients with Deficits", patients_with_deficits)
 
     with col3:
         treatment_patients = len(
-            tasks_df[tasks_df["Treatment assignment"] == "Treatment"]
+            tasks_df[tasks_df["treatment_assignment"] == "Treatment"]
         )
         st.metric("Treatment Group", treatment_patients)
 
     with col4:
-        control_patients = len(tasks_df[tasks_df["Treatment assignment"] == "Control"])
+        control_patients = len(tasks_df[tasks_df["treatment_assignment"] == "Control"])
         st.metric("Control Group", control_patients)
 
     # Clinical score distribution
@@ -165,7 +165,7 @@ def show_individual_lesion_explorer(visualizer, tasks_df):
         filter_by_score = st.checkbox("Filter by Clinical Score")
         if filter_by_score:
             min_score = st.slider("Minimum Clinical Score", 0, 100, 10)
-            filtered_df = tasks_df[tasks_df["Clinical score"] >= min_score]
+            filtered_df = tasks_df[tasks_df["clinical_score"] >= min_score]
             lesion_ids = filtered_df["lesion_id"].tolist()
 
     with col2:
@@ -174,7 +174,7 @@ def show_individual_lesion_explorer(visualizer, tasks_df):
             treatment_type = st.selectbox(
                 "Treatment Type", ["Treatment", "Control", "N/A"]
             )
-            filtered_df = tasks_df[tasks_df["Treatment assignment"] == treatment_type]
+            filtered_df = tasks_df[tasks_df["treatment_assignment"] == treatment_type]
             lesion_ids = filtered_df["lesion_id"].tolist()
 
     if not lesion_ids:
@@ -191,20 +191,20 @@ def show_individual_lesion_explorer(visualizer, tasks_df):
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
-            st.metric("Clinical Score", lesion_info.get("Clinical score", "N/A"))
+            st.metric("Clinical Score", lesion_info.get("clinical_score", "N/A"))
 
         with col2:
-            st.metric("Treatment", lesion_info.get("Treatment assignment", "N/A"))
+            st.metric("Treatment", lesion_info.get("treatment_assignment", "N/A"))
 
         with col3:
-            st.metric("Outcome Score", lesion_info.get("Outcome score", "N/A"))
+            st.metric("Outcome Score", lesion_info.get("outcome_score", "N/A"))
 
         with col4:
-            if pd.notna(lesion_info.get("Clinical score", np.nan)) and pd.notna(
-                lesion_info.get("Outcome score", np.nan)
+            if pd.notna(lesion_info.get("clinical_score", np.nan)) and pd.notna(
+                lesion_info.get("outcome_score", np.nan)
             ):
                 improvement = (
-                    lesion_info["Clinical score"] - lesion_info["Outcome score"]
+                    lesion_info["clinical_score"] - lesion_info["outcome_score"]
                 )
                 st.metric("Improvement", f"{improvement:.1f}")
 
@@ -339,7 +339,7 @@ def show_population_analysis(visualizer, tasks_df):
         fig_volume = px.histogram(
             volume_df,
             x="volume",
-            color="Treatment assignment",
+            color="treatment_assignment",
             title="Distribution of Lesion Volumes",
             labels={"volume": "Lesion Volume (voxels)"},
             nbins=30,
@@ -767,14 +767,14 @@ def show_volume_analysis(visualizer):
 
             # Add improvement calculation
             treatment_volume_df = volume_df[
-                (volume_df["Treatment assignment"].isin(["Treatment", "Control"]))
-                & (volume_df["Outcome score"].notna())
+                (volume_df["treatment_assignment"].isin(["Treatment", "Control"]))
+                & (volume_df["outcome_score"].notna())
             ].copy()
 
             if len(treatment_volume_df) > 0:
                 treatment_volume_df["Improvement"] = (
-                    treatment_volume_df["Clinical score"]
-                    - treatment_volume_df["Outcome score"]
+                    treatment_volume_df["clinical_score"]
+                    - treatment_volume_df["outcome_score"]
                 )
 
                 st.subheader("Volume vs Treatment Response")
@@ -783,7 +783,7 @@ def show_volume_analysis(visualizer):
                     treatment_volume_df,
                     x="volume",
                     y="Improvement",
-                    color="Treatment assignment",
+                    color="treatment_assignment",
                     title="Lesion Volume vs Treatment Improvement",
                     labels={
                         "volume": "Lesion Volume (voxels)",
@@ -808,7 +808,7 @@ def show_volume_analysis(visualizer):
                 st.metric("Standard Deviation", f"{volume_df['volume'].std():.0f}")
 
             with col4:
-                correlation = volume_df["volume"].corr(volume_df["Clinical score"])
+                correlation = volume_df["volume"].corr(volume_df["clinical_score"])
                 st.metric("Volume-Clinical Correlation", f"{correlation:.3f}")
 
             # Volume distribution
@@ -817,7 +817,7 @@ def show_volume_analysis(visualizer):
             fig_dist = px.box(
                 volume_df,
                 y="volume",
-                color="Treatment assignment",
+                color="treatment_assignment",
                 title="Lesion Volume Distribution by Treatment Group",
             )
 

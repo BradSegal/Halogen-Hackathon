@@ -139,9 +139,9 @@ class BrainLesionVisualizer:
         axes[2].set_title(f"Coronal (y={center_y})")
         axes[2].axis("off")
 
-        clinical_score = lesion_info.get("Clinical score", "N/A")
-        treatment = lesion_info.get("Treatment assignment", "N/A")
-        outcome = lesion_info.get("Outcome score", "N/A")
+        clinical_score = lesion_info.get("clinical_score", "N/A")
+        treatment = lesion_info.get("treatment_assignment", "N/A")
+        outcome = lesion_info.get("outcome_score", "N/A")
 
         fig.suptitle(
             f"{lesion_id} | Clinical: {clinical_score} | Treatment: {treatment} | Outcome: {outcome}"
@@ -187,9 +187,9 @@ class BrainLesionVisualizer:
             )
         )
 
-        clinical_score = lesion_info.get("Clinical score", "N/A")
-        treatment = lesion_info.get("Treatment assignment", "N/A")
-        outcome = lesion_info.get("Outcome score", "N/A")
+        clinical_score = lesion_info.get("clinical_score", "N/A")
+        treatment = lesion_info.get("treatment_assignment", "N/A")
+        outcome = lesion_info.get("outcome_score", "N/A")
 
         fig.update_layout(
             title=f"3D Lesion: {lesion_id}<br>Clinical: {clinical_score} | Treatment: {treatment} | Outcome: {outcome}",
@@ -223,7 +223,7 @@ class BrainLesionVisualizer:
         # Filter data
         if group_filter:
             filtered_df = self.tasks_df[
-                self.tasks_df["Treatment assignment"] == group_filter
+                self.tasks_df["treatment_assignment"] == group_filter
             ]
         else:
             filtered_df = self.tasks_df
@@ -287,7 +287,7 @@ class BrainLesionVisualizer:
         # All patients
         fig.add_trace(
             go.Histogram(
-                x=self.tasks_df["Clinical score"],
+                x=self.tasks_df["clinical_score"],
                 name="All patients",
                 opacity=0.7,
                 nbinsx=20,
@@ -296,8 +296,8 @@ class BrainLesionVisualizer:
 
         # Treatment group
         treatment_scores = self.tasks_df[
-            self.tasks_df["Treatment assignment"] == "Treatment"
-        ]["Clinical score"]
+            self.tasks_df["treatment_assignment"] == "Treatment"
+        ]["clinical_score"]
 
         fig.add_trace(
             go.Histogram(
@@ -307,8 +307,8 @@ class BrainLesionVisualizer:
 
         # Control group
         control_scores = self.tasks_df[
-            self.tasks_df["Treatment assignment"] == "Control"
-        ]["Clinical score"]
+            self.tasks_df["treatment_assignment"] == "Control"
+        ]["clinical_score"]
 
         fig.add_trace(
             go.Histogram(x=control_scores, name="Control group", opacity=0.7, nbinsx=20)
@@ -336,20 +336,20 @@ class BrainLesionVisualizer:
         """
         # Get treatment data only
         treatment_data = self.tasks_df[
-            (self.tasks_df["Treatment assignment"].isin(["Treatment", "Control"]))
-            & (self.tasks_df["Outcome score"].notna())
+            (self.tasks_df["treatment_assignment"].isin(["Treatment", "Control"]))
+            & (self.tasks_df["outcome_score"].notna())
         ].copy()
 
         # Calculate improvement
         treatment_data["Improvement"] = (
-            treatment_data["Clinical score"] - treatment_data["Outcome score"]
+            treatment_data["clinical_score"] - treatment_data["outcome_score"]
         )
 
         fig = go.Figure()
 
         # Treatment group
         treatment_group = treatment_data[
-            treatment_data["Treatment assignment"] == "Treatment"
+            treatment_data["treatment_assignment"] == "Treatment"
         ]
         fig.add_trace(
             go.Box(
@@ -363,7 +363,7 @@ class BrainLesionVisualizer:
 
         # Control group
         control_group = treatment_data[
-            treatment_data["Treatment assignment"] == "Control"
+            treatment_data["treatment_assignment"] == "Control"
         ]
         fig.add_trace(
             go.Box(
@@ -445,12 +445,12 @@ class BrainLesionVisualizer:
         fig = px.scatter(
             volume_df,
             x="volume",
-            y="Clinical score",
-            color="Treatment assignment",
+            y="clinical_score",
+            color="treatment_assignment",
             title="Lesion Volume vs Clinical Score",
             labels={
                 "volume": "Lesion Volume (voxels)",
-                "Clinical score": "Clinical Score",
+                "clinical_score": "Clinical Score",
             },
         )
 
@@ -480,7 +480,7 @@ def visualize_random_lesions(
     """
     # Sample lesions with non-zero clinical scores
     lesions_with_deficit = visualizer.tasks_df[
-        visualizer.tasks_df["Clinical score"] > 0
+        visualizer.tasks_df["clinical_score"] > 0
     ]
     sample_lesions = lesions_with_deficit.sample(n_samples)
 
@@ -501,7 +501,7 @@ def visualize_random_lesions(
 
             # Plot axial slice
             axes[i].imshow(lesion_data[:, :, center_z].T, cmap="Reds", origin="lower")
-            axes[i].set_title(f'{lesion_id}\nScore: {row["Clinical score"]}')
+            axes[i].set_title(f'{lesion_id}\nScore: {row["clinical_score"]}')
             axes[i].axis("off")
 
         except FileNotFoundError:

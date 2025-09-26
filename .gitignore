@@ -2,3 +2,5 @@
 /repomix/
 /.agent_work/
 /src/holothon.egg-info/
+/data/processed/features_cache/
+/data/processed/
