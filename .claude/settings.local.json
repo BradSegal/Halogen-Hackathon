@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "Bash(timeout:*)",
+      "Read(/mnt/c/Users/bradl/PycharmProjects/**)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git config:*)",
+      "Bash(git log:*)",
+      "Bash(mkdir:*)",
+      "Bash(git checkout:*)",
+      "Bash(git pull:*)",
+      "Bash(git branch:*)",
+      "Bash(git worktree:*)",
+      "Read(//mnt/c/Users/bradl/PycharmProjects/**)",
+      "Bash(tee:*)",
+      "Bash(mypy:*)",
+      "Bash(black:*)",
+      "Bash(ruff check:*)",
+      "Bash(git merge:*)",
+      "Read(//home/bradl/**)",
+      "Bash(pytest:*)",
+      "Bash(git reset:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
