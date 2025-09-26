@@ -1081,8 +1081,14 @@ def show_cnn_substrate_maps(analyzer):
     # View mode selection
     view_mode = st.radio(
         "View Mode",
-        ["Compare Models (Side-by-side)", "All Maps (Grid View)", "Single Map Type"],
-        horizontal=True
+        ["All Maps (Grid View)", "Compare Models", "Compare Map Types", "Single Map"],
+        horizontal=True,
+        help="""
+        • All Maps: Show all available maps in a grid
+        • Compare Models: Compare same map type across models (baseline vs atlas vs CNN)
+        • Compare Map Types: Show deficit and treatment maps side-by-side
+        • Single Map: Focus on one specific map
+        """
     )
 
     # Controls
@@ -1113,7 +1119,14 @@ def show_cnn_substrate_maps(analyzer):
                 help=f"Navigate through {slice_axis} slices"
             )
 
-        if view_mode == "Single Map Type":
+        # Configure parameters based on view mode
+        if view_mode == "All Maps (Grid View)":
+            show_all = True
+            compare_models = False
+            model_filter = None
+            map_type = "deficit"  # Not used when show_all=True
+
+        elif view_mode == "Compare Models":
             with col3:
                 map_type = st.selectbox(
                     "Map Type",
@@ -1121,21 +1134,61 @@ def show_cnn_substrate_maps(analyzer):
                     format_func=lambda x: x.capitalize()
                 )
             show_all = False
-        elif view_mode == "All Maps (Grid View)":
-            map_type = "deficit"  # Default, not used when show_all=True
-            show_all = True
-        else:  # Compare Models
+            compare_models = True
+            model_filter = None
+
+        elif view_mode == "Compare Map Types":
+            with col3:
+                model_filter = st.selectbox(
+                    "Model",
+                    ["baseline", "atlas", "cnn"],
+                    format_func=lambda x: x.capitalize()
+                )
+            # Show both deficit and treatment for selected model
+            show_all = False
+            compare_models = False
+            map_type = "deficit"  # Will show both types
+
+        else:  # Single Map
             with col3:
                 map_type = st.selectbox(
-                    "Map Type to Compare",
+                    "Map Type",
                     ["deficit", "treatment"],
                     format_func=lambda x: x.capitalize()
                 )
+            with col4:
+                available_models = list(set([k.split('_')[1] for k in maps.keys()]))
+                model_filter = st.selectbox(
+                    "Model",
+                    available_models,
+                    format_func=lambda x: x.capitalize()
+                )
             show_all = False
+            compare_models = False
 
         # Display the maps
-        fig = analyzer.plot_result_maps(map_type, slice_axis, slice_idx, show_all=show_all)
-        st.plotly_chart(fig, use_container_width=True)
+        if view_mode == "Compare Map Types" and model_filter:
+            # Special handling for comparing deficit vs treatment
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.subheader("Deficit Map")
+                fig1 = analyzer.plot_result_maps("deficit", slice_axis, slice_idx,
+                                                show_all=False, compare_models=False,
+                                                model_filter=model_filter)
+                st.plotly_chart(fig1, use_container_width=True)
+
+            with col2:
+                st.subheader("Treatment Map")
+                fig2 = analyzer.plot_result_maps("treatment", slice_axis, slice_idx,
+                                                show_all=False, compare_models=False,
+                                                model_filter=model_filter)
+                st.plotly_chart(fig2, use_container_width=True)
+        else:
+            fig = analyzer.plot_result_maps(map_type, slice_axis, slice_idx,
+                                           show_all=show_all, compare_models=compare_models,
+                                           model_filter=model_filter)
+            st.plotly_chart(fig, use_container_width=True)
 
         # Show available maps summary
         st.subheader("📂 Available Maps")
@@ -1162,16 +1215,32 @@ def show_cnn_substrate_maps(analyzer):
         with col2:
             if st.button("ℹ️ Map Information"):
                 with st.expander("Map Details", expanded=True):
+                    # Group maps by model
+                    model_maps = {'baseline': [], 'atlas': [], 'cnn': []}
                     for map_name in available_maps.keys():
-                        st.write(f"**{map_name.replace('_', ' ').title()}**")
-                        if 'baseline' in map_name:
-                            st.write("- Method: Traditional lesion-symptom mapping")
-                        elif 'cnn' in map_name:
-                            st.write("- Method: CNN saliency/gradient analysis")
-                        if 'deficit' in map_name:
-                            st.write("- Purpose: Identifies regions associated with clinical deficits")
-                        elif 'treatment' in map_name:
-                            st.write("- Purpose: Identifies regions predictive of treatment response")
+                        for model in model_maps.keys():
+                            if model in map_name:
+                                model_maps[model].append(map_name)
+
+                    for model, maps_list in model_maps.items():
+                        if maps_list:
+                            st.write(f"**{model.capitalize()} Model**")
+                            if model == 'baseline':
+                                st.write("- Method: Linear regression with downsampled voxel features")
+                                st.write("- Features: ~20K downsampled voxels")
+                            elif model == 'atlas':
+                                st.write("- Method: Random Forest with atlas-based ROI features")
+                                st.write("- Features: 400 brain regions from Schaefer atlas")
+                            elif model == 'cnn':
+                                st.write("- Method: 3D CNN with gradient-based saliency maps")
+                                st.write("- Features: Full resolution 3D brain images")
+
+                            for map_name in maps_list:
+                                if 'deficit' in map_name:
+                                    st.write(f"  • Deficit map: Regions associated with clinical deficits")
+                                elif 'treatment' in map_name:
+                                    st.write(f"  • Treatment map: Regions predictive of treatment response")
+                            st.write("")
     else:
         st.warning("No result maps found. Please run the model training and map generation scripts first.")
 
