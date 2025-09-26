@@ -98,8 +98,9 @@ def main(args):
                 img_tensor, torch.tensor([0], dtype=torch.float32).to(device)
             )
 
-            # CATE = improvement = outcome_control - outcome_treated
-            cate = pred_control["outcome"].item() - pred_treated["outcome"].item()
+            # CATE = treatment benefit = outcome_treated - outcome_control
+            # Positive CATE means treatment improves outcome (since higher outcome is better)
+            cate = pred_treated["outcome"].item() - pred_control["outcome"].item()
             cates.append(cate)
 
     treatment_cohort_df["predicted_cate"] = cates

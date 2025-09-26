@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 def setup_data_loaders(
     train_path: str,
     val_path: str,
-    batch_size: int = 32,
+    batch_size: int = 8,
     smoke_test: bool = False,
 ):
     """
@@ -236,10 +236,8 @@ def train_model(smoke_test: bool = False):
     model = MultiTaskCNN(dropout_rate=0.5).to(device)
     logger.info(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 
-    # OPTIMAL CONFIGURATION: AdamW optimizer
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-2)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-2, weight_decay=1e-2)
 
-    # OPTIMAL CONFIGURATION: Learning Rate Scheduler
     # For multi-task, we monitor the combined validation loss
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="min", factor=0.1, patience=3

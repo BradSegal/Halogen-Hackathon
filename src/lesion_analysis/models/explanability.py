@@ -35,7 +35,10 @@ def generate_saliency_map(
     # Our model's forward pass takes two arguments (x, w). This wrapper
     # creates a new function that "freezes" the treatment_tensor argument.
     def model_forward_wrapper(img_tensor: torch.Tensor):
-        output = model(img_tensor, treatment_tensor)
+        # Expand treatment tensor to match batch size for integrated gradients
+        batch_size = img_tensor.shape[0]
+        treatment_expanded = treatment_tensor.expand(batch_size)
+        output = model(img_tensor, treatment_expanded)
         return output[target_head]
 
     ig = IntegratedGradients(model_forward_wrapper)

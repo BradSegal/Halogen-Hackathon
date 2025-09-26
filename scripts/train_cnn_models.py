@@ -42,7 +42,7 @@ def setup_data_loaders(
     train_path: str,
     val_path: str,
     task: str,
-    batch_size: int = 32,
+    batch_size: int = 16,
     smoke_test: bool = False,
     train_on_all: bool = False,
 ):
@@ -279,6 +279,10 @@ def train_model(task: str, smoke_test: bool = False, train_on_all: bool = False)
     logger.info(
         f"Starting training for {task} (max_epochs={max_epochs}, patience={patience})"
     )
+    logger.info(
+        "NOTE: Models are saved ONLY when validation performance improves. "
+        "If training is interrupted, the last best model checkpoint will be available."
+    )
 
     for epoch in range(max_epochs):
         logger.info(f"\nEpoch {epoch + 1}/{max_epochs}")
@@ -330,7 +334,7 @@ def train_model(task: str, smoke_test: bool = False, train_on_all: bool = False)
             break
 
     logger.info(f"Training completed. Best {metric_name}: {best_metric:.4f}")
-    logger.info(f"Model saved to: {model_path}")
+    logger.info(f"Best model (from epoch {best_epoch + 1}) saved to: {model_path}")
 
 
 def main():
