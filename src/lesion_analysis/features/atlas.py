@@ -7,11 +7,13 @@ from nilearn.datasets import fetch_atlas_schaefer_2018
 from nilearn.maskers import NiftiLabelsMasker
 from pathlib import Path
 
+
 class AtlasFeatureExtractor:
     """
     Transforms NIfTI lesion maps into feature vectors based on an anatomical atlas.
     Each feature represents the mean lesion signal (lesion load) within an ROI.
     """
+
     def __init__(self, n_rois: int = 400, model_dir: Path = Path("models")):
         self.n_rois = n_rois
         self.atlas_name = f"schaefer_2018_{n_rois}rois"
@@ -40,6 +42,8 @@ class AtlasFeatureExtractor:
             memory="nilearn_cache",
             verbose=0,
         )
+        # Fit the masker (required before transform)
+        self.masker.fit()
         joblib.dump(self.masker, self.masker_path)
         print(f"Masker saved to {self.masker_path}")
 
@@ -59,5 +63,7 @@ class AtlasFeatureExtractor:
             self.masker = joblib.load(self.masker_path)
 
         lesion_filepaths = df["lesion_filepath"].tolist()
-        print(f"Transforming {len(lesion_filepaths)} lesions into {self.n_rois} ROI features...")
+        print(
+            f"Transforming {len(lesion_filepaths)} lesions into {self.n_rois} ROI features..."
+        )
         return self.masker.transform(lesion_filepaths)
