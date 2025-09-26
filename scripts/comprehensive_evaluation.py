@@ -37,6 +37,8 @@ from sklearn.metrics import (
 from scipy.stats import pearsonr, spearmanr
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import nibabel as nib
+from nilearn import image as nli
 
 # Add src to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
@@ -45,6 +47,7 @@ from src.lesion_analysis.features.atlas import AtlasFeatureExtractor
 from src.lesion_analysis.features.voxel import downsample_and_flatten_lesions
 from src.lesion_analysis.models.cnn import Simple3DCNN, MultiTaskCNN
 from src.lesion_analysis.models.torch_loader import LesionDataset
+from src.lesion_analysis.models.explanability import generate_saliency_map
 from src.visualization import BrainLesionVisualizer
 
 # Configure logging
@@ -893,6 +896,273 @@ CATE < 0 (predicted harm): {np.sum(cate_values < 0)}"""
             plt.close()
             logger.info(f"Saved confusion matrix to {output_path}")
 
+    def generate_brain_maps(self):
+        """Generate brain maps (deficit and treatment maps) for all evaluated models."""
+        if not self.visualize:
+            return
+
+        logger.info("Generating brain maps for all models...")
+        brain_maps_dir = self.output_dir / "visualizations" / "brain_maps"
+        brain_maps_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate maps for each model type
+        if "Baseline" in self.all_metrics:
+            self._generate_baseline_brain_maps(brain_maps_dir)
+
+        if "Atlas" in self.all_metrics:
+            self._generate_atlas_brain_maps(brain_maps_dir)
+
+        if "MultiTask-CNN" in self.all_metrics:
+            self._generate_multitask_brain_maps(brain_maps_dir)
+
+    def _generate_baseline_brain_maps(self, output_dir: Path):
+        """Generate brain maps for baseline models using model coefficients."""
+        logger.info("  Generating baseline model brain maps...")
+
+        try:
+            # Get a sample image for reference
+            sample_img = nib.load(self.test_df.iloc[0]["lesion_filepath"])
+
+            # Create resampled image EXACTLY as done in training
+            # Using affine * 4 to downsample by factor of 4
+            resampled_img = nli.resample_img(
+                sample_img, target_affine=sample_img.affine * 4, interpolation="nearest"
+            )
+            downsampled_shape = resampled_img.shape
+            logger.info(f"    Downsampled shape from resampled image: {downsampled_shape}")
+
+            # Load models
+            model_task1_path = MODELS_DIR / "task1_baseline_model.pkl"
+            model_task2_path = MODELS_DIR / "task2_baseline_model.pkl"
+
+            if model_task1_path.exists():
+                model_task1 = joblib.load(model_task1_path)
+
+                # Get coefficients and reshape to brain space
+                if hasattr(model_task1, 'coef_'):
+                    deficit_coefs = model_task1.coef_
+
+                    # Verify shape matches
+                    if deficit_coefs.size != np.prod(downsampled_shape):
+                        logger.warning(f"    Coefficient size mismatch: {deficit_coefs.size} vs expected {np.prod(downsampled_shape)}")
+                        return
+
+                    # Reshape exactly as in training script
+                    deficit_map_downsampled = deficit_coefs.reshape(downsampled_shape)
+                    deficit_map_upsampled_img = nli.resample_to_img(
+                        source_img=nib.Nifti1Image(deficit_map_downsampled, resampled_img.affine),
+                        target_img=sample_img,
+                        interpolation="continuous"
+                    )
+
+                    deficit_path = output_dir / "deficit_map_baseline.nii.gz"
+                    deficit_map_upsampled_img.to_filename(deficit_path)
+                    logger.info(f"    Saved baseline deficit map to {deficit_path}")
+
+            if model_task2_path.exists():
+                model_task2 = joblib.load(model_task2_path)
+
+                # Get coefficients for treatment response
+                if hasattr(model_task2, 'coef_'):
+                    # For binary classification, coef_ has shape (1, n_features)
+                    treatment_coefs = model_task2.coef_.flatten()
+
+                    # Verify shape matches
+                    if treatment_coefs.size != np.prod(downsampled_shape):
+                        logger.warning(f"    Coefficient size mismatch: {treatment_coefs.size} vs expected {np.prod(downsampled_shape)}")
+                        return
+
+                    # Reshape exactly as in training script
+                    treatment_map_downsampled = treatment_coefs.reshape(downsampled_shape)
+                    treatment_map_upsampled_img = nli.resample_to_img(
+                        source_img=nib.Nifti1Image(treatment_map_downsampled, resampled_img.affine),
+                        target_img=sample_img,
+                        interpolation="continuous"
+                    )
+
+                    # Enforce subset constraint (exactly as in training script)
+                    if 'deficit_map_upsampled_img' in locals():
+                        deficit_mask_img = nli.math_img("img > 0", img=deficit_map_upsampled_img)
+                        final_treatment_map_img = nli.math_img(
+                            "img1 * img2", img1=treatment_map_upsampled_img, img2=deficit_mask_img
+                        )
+                    else:
+                        final_treatment_map_img = treatment_map_upsampled_img
+
+                    treatment_path = output_dir / "treatment_map_baseline.nii.gz"
+                    final_treatment_map_img.to_filename(treatment_path)
+                    logger.info(f"    Saved baseline treatment map to {treatment_path}")
+
+        except Exception as e:
+            logger.warning(f"    Could not generate baseline brain maps: {e}")
+
+    def _generate_atlas_brain_maps(self, output_dir: Path):
+        """Generate brain maps for atlas models using feature importance."""
+        logger.info("  Generating atlas model brain maps...")
+
+        try:
+            feature_extractor = AtlasFeatureExtractor(n_rois=400, model_dir=MODELS_DIR)
+
+            # Load the masker which contains atlas information
+            if feature_extractor.masker_path.exists():
+                feature_extractor.masker = joblib.load(feature_extractor.masker_path)
+                # Get atlas image from the masker
+                if hasattr(feature_extractor.masker, 'labels_img'):
+                    if isinstance(feature_extractor.masker.labels_img, str):
+                        feature_extractor.atlas_img = nib.load(feature_extractor.masker.labels_img)
+                    else:
+                        feature_extractor.atlas_img = feature_extractor.masker.labels_img
+
+            if feature_extractor.atlas_img is None:
+                logger.warning("    Could not load atlas image from masker")
+                return
+
+            # Task 1: Deficit map
+            model_task1_path = MODELS_DIR / "task1_atlas_model.pkl"
+            if model_task1_path.exists():
+                model_task1 = joblib.load(model_task1_path)
+
+                if hasattr(model_task1, 'coef_'):
+                    deficit_weights = model_task1.coef_.flatten()
+                    deficit_map_img = AtlasFeatureExtractor.memory_efficient_inverse_transform(
+                        deficit_weights, feature_extractor.atlas_img
+                    )
+                    deficit_path = output_dir / "deficit_map_atlas.nii.gz"
+                    deficit_map_img.to_filename(deficit_path)
+                    logger.info(f"    Saved atlas deficit map to {deficit_path}")
+
+            # Task 2: Treatment map
+            model_task2_path = MODELS_DIR / "task2_atlas_model.pkl"
+            if model_task2_path.exists():
+                model_task2 = joblib.load(model_task2_path)
+
+                # Use feature importances or coefficients depending on model type
+                if hasattr(model_task2, 'feature_importances_'):
+                    treatment_weights = model_task2.feature_importances_
+                elif hasattr(model_task2, 'coef_'):
+                    treatment_weights = model_task2.coef_.flatten()
+                else:
+                    treatment_weights = None
+
+                if treatment_weights is not None:
+                    treatment_map_img = AtlasFeatureExtractor.memory_efficient_inverse_transform(
+                        treatment_weights, feature_extractor.atlas_img
+                    )
+
+                    # Apply deficit mask constraint if deficit map exists
+                    if 'deficit_map_img' in locals():
+                        deficit_mask_img = nli.math_img("np.abs(img) > 1e-6", img=deficit_map_img)
+                        final_treatment_map_img = nli.math_img(
+                            "img1 * img2", img1=treatment_map_img, img2=deficit_mask_img
+                        )
+                    else:
+                        final_treatment_map_img = treatment_map_img
+
+                    treatment_path = output_dir / "treatment_map_atlas.nii.gz"
+                    final_treatment_map_img.to_filename(treatment_path)
+                    logger.info(f"    Saved atlas treatment map to {treatment_path}")
+
+        except Exception as e:
+            logger.warning(f"    Could not generate atlas brain maps: {e}")
+
+    def _generate_multitask_brain_maps(self, output_dir: Path):
+        """Generate brain maps for MultiTask CNN using saliency maps."""
+        logger.info("  Generating MultiTask CNN brain maps...")
+
+        try:
+            model_path = MODELS_DIR / "multitask_cnn_model.pt"
+            if not model_path.exists():
+                logger.warning("    MultiTask CNN model not found")
+                return
+
+            # Load model
+            model = MultiTaskCNN().to(self.device)
+            model.load_state_dict(torch.load(model_path, map_location=self.device))
+            model.eval()
+
+            # --- Generate Deficit Map ---
+            # Use patients with high clinical scores
+            train_df = pd.read_csv(PROCESSED_DATA_DIR / "train.csv")
+            deficit_threshold = train_df[train_df.clinical_score > 0].clinical_score.quantile(0.75)
+            deficit_cohort_df = self.test_df[self.test_df.clinical_score >= deficit_threshold]
+
+            # Limit to reasonable number for computation
+            max_samples = 20
+            if len(deficit_cohort_df) > max_samples:
+                deficit_cohort_df = deficit_cohort_df.sample(n=max_samples)
+
+            logger.info(f"    Generating deficit map from {len(deficit_cohort_df)} high-deficit patients...")
+
+            all_deficit_maps = []
+            for _, row in tqdm(deficit_cohort_df.iterrows(),
+                              total=len(deficit_cohort_df),
+                              desc="    Deficit Map Saliency"):
+                img = nib.load(row["lesion_filepath"])
+                img_tensor = torch.from_numpy(img.get_fdata(dtype=np.float32)).unsqueeze(0).unsqueeze(0).to(self.device)
+                w_tensor = torch.zeros(1).to(self.device)  # W is irrelevant for severity head
+
+                saliency_map = generate_saliency_map(
+                    model, img_tensor, w_tensor, target_head="severity", n_steps=50
+                )
+                all_deficit_maps.append(saliency_map)
+
+            if all_deficit_maps:
+                mean_deficit_map = np.mean(all_deficit_maps, axis=0)
+                sample_affine = nib.load(self.test_df.iloc[0]["lesion_filepath"]).affine
+                deficit_path = output_dir / "deficit_map_multitask_cnn.nii.gz"
+                nib.save(nib.Nifti1Image(mean_deficit_map, sample_affine), deficit_path)
+                logger.info(f"    Saved MultiTask CNN deficit map to {deficit_path}")
+
+            # --- Generate Treatment Map ---
+            # Use predicted responders
+            treatment_cohort_df = self.test_df[self.test_df.treatment_assignment == "Treatment"].copy()
+
+            if len(treatment_cohort_df) > 0:
+                logger.info(f"    Calculating predicted CATE for {len(treatment_cohort_df)} treated patients...")
+
+                cates = []
+                with torch.no_grad():
+                    for _, row in treatment_cohort_df.iterrows():
+                        img = nib.load(row["lesion_filepath"])
+                        img_tensor = torch.from_numpy(img.get_fdata(dtype=np.float32)).unsqueeze(0).unsqueeze(0).to(self.device)
+
+                        # Calculate CATE
+                        pred_treated = model(img_tensor, torch.ones(1).to(self.device))
+                        pred_control = model(img_tensor, torch.zeros(1).to(self.device))
+                        cate = pred_treated["outcome"].item() - pred_control["outcome"].item()
+                        cates.append(cate)
+
+                treatment_cohort_df["predicted_cate"] = cates
+                responder_cohort_df = treatment_cohort_df[treatment_cohort_df["predicted_cate"] > 0]
+
+                # Limit to reasonable number
+                if len(responder_cohort_df) > max_samples:
+                    responder_cohort_df = responder_cohort_df.sample(n=max_samples)
+
+                logger.info(f"    Generating treatment map from {len(responder_cohort_df)} predicted responders...")
+
+                all_treatment_maps = []
+                for _, row in tqdm(responder_cohort_df.iterrows(),
+                                  total=len(responder_cohort_df),
+                                  desc="    Treatment Map Saliency"):
+                    img = nib.load(row["lesion_filepath"])
+                    img_tensor = torch.from_numpy(img.get_fdata(dtype=np.float32)).unsqueeze(0).unsqueeze(0).to(self.device)
+                    w_tensor = torch.ones(1).to(self.device)  # Must explain outcome for treated patient
+
+                    saliency_map = generate_saliency_map(
+                        model, img_tensor, w_tensor, target_head="outcome", n_steps=50
+                    )
+                    all_treatment_maps.append(saliency_map)
+
+                if all_treatment_maps:
+                    mean_treatment_map = np.mean(all_treatment_maps, axis=0)
+                    treatment_path = output_dir / "treatment_map_multitask_cnn.nii.gz"
+                    nib.save(nib.Nifti1Image(mean_treatment_map, sample_affine), treatment_path)
+                    logger.info(f"    Saved MultiTask CNN treatment map to {treatment_path}")
+
+        except Exception as e:
+            logger.warning(f"    Could not generate MultiTask CNN brain maps: {e}")
+
     def generate_html_report(self):
         """Generate comprehensive HTML report."""
         logger.info("Generating HTML report...")
@@ -1109,6 +1379,29 @@ CATE < 0 (predicted harm): {np.sum(cate_values < 0)}"""
                     rel_path = conf_file.relative_to(self.output_dir)
                     html_content += f'<img src="{rel_path}" alt="Confusion Matrix">\n'
 
+        # Add brain maps section
+        brain_maps_dir = viz_dir / "brain_maps"
+        if brain_maps_dir.exists():
+            brain_map_files = list(brain_maps_dir.glob("*.nii.gz"))
+            if brain_map_files:
+                html_content += "<h3>Brain Maps (NIfTI Files)</h3>"
+                html_content += "<p>The following brain maps have been generated and saved as NIfTI files:</p>"
+                html_content += "<ul>"
+                for map_file in sorted(brain_map_files):
+                    file_name = map_file.name
+                    file_size_mb = map_file.stat().st_size / (1024 * 1024)
+                    model_type = ""
+                    if "baseline" in file_name:
+                        model_type = " (Baseline - Model Coefficients)"
+                    elif "atlas" in file_name:
+                        model_type = " (Atlas - Feature Importance)"
+                    elif "multitask" in file_name:
+                        model_type = " (MultiTask CNN - Saliency Maps)"
+
+                    html_content += f'<li><strong>{file_name}</strong>{model_type} - {file_size_mb:.2f} MB</li>'
+                html_content += "</ul>"
+                html_content += "<p><em>Note: Brain maps can be viewed in neuroimaging software like FSLView, ITK-SNAP, or 3D Slicer.</em></p>"
+
         html_content += """
     </div>
 
@@ -1174,6 +1467,7 @@ CATE < 0 (predicted harm): {np.sum(cate_values < 0)}"""
             self.create_error_distribution_plots()
             self.create_confusion_matrices()
             self.create_cate_analysis_plots()
+            self.generate_brain_maps()
 
         # Generate HTML report
         self.generate_html_report()
