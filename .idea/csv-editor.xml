@@ -17,6 +17,13 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="\results\test_evaluation\predictions\baseline_task1_predictions.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
       </map>
     </option>
   </component>

@@ -15,7 +15,7 @@ sys.path.append(str(Path(__file__).parent.parent / "src"))
 
 from src.lesion_analysis.features.voxel import downsample_and_flatten_lesions
 from src.lesion_analysis.features.atlas import AtlasFeatureExtractor
-from src.lesion_analysis.models.cnn import Simple3DCNN
+from src.lesion_analysis.models.cnn import Simple3DCNN, MultiTaskCNN
 from src.lesion_analysis.models.torch_loader import LesionDataset
 from torch.utils.data import DataLoader
 
@@ -195,6 +195,98 @@ def evaluate_cnn_models(test_df: pd.DataFrame) -> dict:
     return results
 
 
+def evaluate_multitask_cnn(test_df: pd.DataFrame) -> dict:
+    """Evaluates the multitask CNN model. Returns a dictionary of results."""
+    logger.info("--- Evaluating MultiTask CNN Model ---")
+    results = {}
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    try:
+        model_path = MODELS_DIR / "multitask_cnn_model.pt"
+        if not model_path.exists():
+            raise FileNotFoundError(f"Model not found: {model_path}")
+
+        model = MultiTaskCNN(dropout_rate=0.5).to(device)
+        model.load_state_dict(torch.load(model_path, map_location=device))
+        model.eval()
+
+        # Prepare dataset - use multitask mode (no target_col)
+        ds = LesionDataset(test_df, target_col=None)
+        loader = DataLoader(ds, batch_size=8, shuffle=False)
+
+        # Collect predictions and targets for both tasks
+        severity_preds, severity_targets = [], []
+        outcome_preds, outcome_targets = [], []
+
+        with torch.no_grad():
+            for imgs, targets_dict in loader:
+                imgs = imgs.to(device)
+                treatment_w = targets_dict["treatment"].to(device)
+
+                # Forward pass
+                predictions = model(imgs, treatment_w)
+
+                # Collect severity predictions (all samples have severity labels)
+                severity_preds.extend(predictions["severity"].cpu().numpy())
+                severity_targets.extend(targets_dict["severity"].cpu().numpy())
+
+                # Collect outcome predictions (only for samples with treatment)
+                outcome_preds.extend(predictions["outcome"].cpu().numpy())
+                outcome_targets.extend(targets_dict["outcome"].cpu().numpy())
+
+        # Calculate RMSE for severity (Task 1)
+        severity_targets_array = np.array(severity_targets)
+        severity_preds_array = np.array(severity_preds)
+        valid_severity_mask = ~np.isnan(severity_targets_array) & (severity_targets_array > 0)
+
+        if valid_severity_mask.any():
+            severity_rmse = np.sqrt(mean_squared_error(
+                severity_targets_array[valid_severity_mask],
+                severity_preds_array[valid_severity_mask]
+            ))
+            results["MultiTask_Severity_RMSE"] = severity_rmse
+            logger.info(f"  - Severity RMSE: {severity_rmse:.4f}")
+        else:
+            logger.warning("  - No valid severity samples to evaluate")
+
+        # Calculate RMSE for outcome (Task 2 - regression variant)
+        outcome_targets_array = np.array(outcome_targets)
+        outcome_preds_array = np.array(outcome_preds)
+        valid_outcome_mask = ~np.isnan(outcome_targets_array)
+
+        if valid_outcome_mask.any():
+            outcome_rmse = np.sqrt(mean_squared_error(
+                outcome_targets_array[valid_outcome_mask],
+                outcome_preds_array[valid_outcome_mask]
+            ))
+            results["MultiTask_Outcome_RMSE"] = outcome_rmse
+            logger.info(f"  - Outcome RMSE: {outcome_rmse:.4f}")
+
+            # Also compute classification metrics for outcome if is_responder exists
+            if "is_responder" in test_df.columns:
+                # Get is_responder values for samples with valid outcomes
+                df_with_outcomes = test_df[test_df.outcome_score.notna()]
+                if len(df_with_outcomes) > 0:
+                    # Create binary predictions based on outcome score
+                    # Positive outcome score suggests responder
+                    outcome_binary_preds = outcome_preds_array[valid_outcome_mask] > 0
+                    is_responder_targets = df_with_outcomes.is_responder.astype(bool).values
+
+                    if len(outcome_binary_preds) == len(is_responder_targets):
+                        bacc = balanced_accuracy_score(is_responder_targets, outcome_binary_preds)
+                        results["MultiTask_Outcome_BACC"] = bacc
+                        logger.info(f"  - Outcome Balanced Accuracy: {bacc:.4f}")
+        else:
+            logger.warning("  - No valid outcome samples to evaluate")
+
+    except FileNotFoundError as e:
+        logger.warning(f"  - Could not evaluate MultiTask CNN model: {e}")
+    except Exception as e:
+        logger.error(f"  - Error evaluating MultiTask CNN model: {e}")
+
+    return results
+
+
 def main():
     """Main function to run the evaluation pipeline."""
     try:
@@ -209,6 +301,7 @@ def main():
     all_results.update(evaluate_baseline_models(test_df))
     all_results.update(evaluate_atlas_models(test_df))
     all_results.update(evaluate_cnn_models(test_df))
+    all_results.update(evaluate_multitask_cnn(test_df))
 
     if not all_results:
         logger.error("No models were found to evaluate. Please run training scripts.")
