@@ -15,7 +15,7 @@ import plotly.express as px
 from nilearn import datasets
 from pathlib import Path
 from typing import Dict, Tuple, Optional, Union
-import warnings
+
 
 class BrainLesionVisualizer:
     """
@@ -41,8 +41,10 @@ class BrainLesionVisualizer:
         # Get MNI template for anatomical reference
         try:
             self.mni_template = datasets.load_mni152_template(resolution=2)
-        except:
-            print("Warning: Could not load MNI template. 3D plotting may be limited.")
+        except Exception as e:
+            print(
+                f"Warning: Could not load MNI template: {e}. 3D plotting may be limited."
+            )
             self.mni_template = None
 
     def load_lesion(self, lesion_id: str) -> np.ndarray:

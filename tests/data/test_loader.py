@@ -149,9 +149,7 @@ lesion_003.nii.gz,2.0,N/A,N/A"""
         # lesion_001: outcome (3.0) < clinical (5.0) → True
         # lesion_002: outcome (9.0) > clinical (8.0) → False
         # lesion_003: outcome is NaN → should be NaN/False
-        assert (
-            df.loc[df["lesion_id"] == "lesion_001.nii.gz", "is_responder"].iloc[0]
-        )
+        assert df.loc[df["lesion_id"] == "lesion_001.nii.gz", "is_responder"].iloc[0]
         assert not (
             df.loc[df["lesion_id"] == "lesion_002.nii.gz", "is_responder"].iloc[0]
         )
