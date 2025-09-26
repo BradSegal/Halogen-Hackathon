@@ -22,7 +22,8 @@ dependencies = [
     "pydantic",
     "torch",
     "torchvision",
-    "xgboost"
+    "xgboost",
+    "captum"
 ]
 
 [tool.setuptools.packages.find]
