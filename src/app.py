@@ -71,6 +71,9 @@ def main():
             "Lesion Clustering",
             "Volume Analysis",
             "Statistical Report",
+            "Model Performance",
+            "CNN Substrate Maps",
+            "Map Statistics",
         ],
     )
 
@@ -97,6 +100,15 @@ def main():
 
     elif app_mode == "Statistical Report":
         show_statistical_report(analyzer)
+
+    elif app_mode == "Model Performance":
+        show_model_performance(analyzer)
+
+    elif app_mode == "CNN Substrate Maps":
+        show_cnn_substrate_maps(analyzer)
+
+    elif app_mode == "Map Statistics":
+        show_map_statistics(analyzer)
 
 
 def show_dataset_overview(visualizer, tasks_df):
@@ -985,6 +997,243 @@ Volume Analysis:
 
             except Exception as e:
                 st.error(f"Error generating report: {e}")
+
+
+def show_model_performance(analyzer):
+    """Display model performance comparison."""
+
+    st.header("🎯 Model Performance Comparison")
+
+    with st.expander("ℹ️ About Model Performance Metrics", expanded=False):
+        st.markdown("""
+        This section compares the performance of different models trained for the brain lesion analysis tasks:
+
+        **Task 1 - Severity Prediction (Regression)**:
+        - **RMSE (Root Mean Squared Error)**: Lower values indicate better performance
+        - Measures how accurately the model predicts clinical severity scores
+
+        **Task 2 - Treatment Response Classification**:
+        - **BACC (Balanced Accuracy)**: Higher values indicate better performance
+        - Measures how well the model predicts treatment response (responder vs non-responder)
+        - Balanced accuracy accounts for class imbalance
+
+        **Models Evaluated**:
+        - **Baseline**: Simple linear models using downsampled voxel features
+        - **Atlas**: Models using atlas-based ROI features
+        - **CNN**: Convolutional Neural Network models learning directly from 3D images
+        """)
+
+    # Display performance comparison
+    fig = analyzer.plot_model_performance()
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Display evaluation results table if available
+    eval_df = analyzer.load_evaluation_results()
+    if eval_df is not None:
+        st.subheader("📊 Detailed Results")
+
+        # Format the dataframe for better display
+        eval_df_display = eval_df.copy()
+        eval_df_display['Score'] = eval_df_display['Score'].round(4)
+        eval_df_display.columns = ['Model/Metric', 'Score']
+
+        st.dataframe(
+            eval_df_display,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        # Add download button for results
+        csv = eval_df.to_csv(index=False)
+        st.download_button(
+            label="📥 Download Results CSV",
+            data=csv,
+            file_name="model_evaluation_results.csv",
+            mime="text/csv"
+        )
+
+
+def show_cnn_substrate_maps(analyzer):
+    """Display CNN substrate maps with interactive controls."""
+
+    st.header("🧠 CNN Substrate Maps")
+
+    with st.expander("ℹ️ About Substrate Maps", expanded=False):
+        st.markdown("""
+        Substrate maps identify brain regions associated with specific deficits or treatment responses:
+
+        **Deficit Map**:
+        - Shows brain regions where lesions correlate with higher clinical deficit scores
+        - Generated using saliency/attention mechanisms from trained CNN models
+        - Warmer colors indicate stronger association with deficits
+
+        **Treatment Map**:
+        - Shows brain regions where lesions predict treatment response
+        - Identifies areas important for determining who will benefit from treatment
+        - Can guide personalized treatment decisions
+
+        **Map Comparison**:
+        - **Baseline**: Generated using traditional lesion-symptom mapping
+        - **CNN**: Generated using deep learning saliency/explainability methods
+        - **Difference**: Shows where CNN and baseline maps diverge
+        """)
+
+    # Controls
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        map_type = st.selectbox(
+            "Select Map Type",
+            ["deficit", "treatment"],
+            format_func=lambda x: x.capitalize()
+        )
+
+    with col2:
+        slice_axis = st.selectbox(
+            "Select View",
+            ["sagittal", "coronal", "axial"],
+            format_func=lambda x: x.capitalize()
+        )
+
+    with col3:
+        # Get the maps to determine slice range
+        maps = analyzer.load_result_maps()
+        if maps:
+            # Get the first available map to determine dimensions
+            sample_map = next(iter(maps.values()))
+            axis_idx = {'sagittal': 0, 'coronal': 1, 'axial': 2}[slice_axis]
+            max_slice = sample_map.shape[axis_idx] - 1
+
+            slice_idx = st.slider(
+                "Slice Index",
+                min_value=0,
+                max_value=max_slice,
+                value=max_slice // 2,
+                help=f"Navigate through {slice_axis} slices"
+            )
+        else:
+            slice_idx = None
+            st.info("No maps available")
+
+    # Display the maps
+    if maps:
+        fig = analyzer.plot_result_maps(map_type, slice_axis, slice_idx)
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Add export options
+        st.subheader("📥 Export Options")
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if st.button("📊 Export Current View as Image"):
+                st.info("To save the image, right-click on the plot and select 'Save as image'")
+
+        with col2:
+            available_maps = analyzer.load_result_maps()
+            if available_maps:
+                map_names = list(available_maps.keys())
+                st.multiselect(
+                    "Available Maps",
+                    map_names,
+                    default=map_names,
+                    disabled=True,
+                    help="These maps are available in the results directory"
+                )
+    else:
+        st.warning("No result maps found. Please run the model training and map generation scripts first.")
+
+        with st.expander("🔧 How to Generate Maps", expanded=True):
+            st.code("""
+# 1. Train models
+python scripts/train_baseline_models.py
+python scripts/train_cnn_models.py
+
+# 2. Generate substrate maps
+python scripts/generate_cnn_maps.py
+            """, language='bash')
+
+
+def show_map_statistics(analyzer):
+    """Display statistical analysis of result maps."""
+
+    st.header("📈 Map Statistics & Analysis")
+
+    with st.expander("ℹ️ About Map Statistics", expanded=False):
+        st.markdown("""
+        Statistical analysis of the generated substrate maps provides insights into:
+
+        **Mean Values**: Average activation/importance across the brain
+        **Standard Deviation**: Variability in map values
+        **Non-zero Voxels**: Number of brain regions identified as relevant
+        **Sparsity**: Proportion of brain that is not implicated (higher = more focused)
+
+        These statistics help:
+        - Compare different mapping approaches (baseline vs CNN)
+        - Assess map reliability and focus
+        - Identify potential issues (e.g., overly sparse or dense maps)
+        """)
+
+    # Display statistics
+    maps = analyzer.load_result_maps()
+
+    if maps:
+        # Show statistical comparison
+        fig = analyzer.plot_map_statistics()
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Create detailed statistics table
+        st.subheader("📊 Detailed Statistics")
+
+        stats_data = []
+        for map_name, map_data in maps.items():
+            non_zero = np.sum(map_data != 0)
+            total = map_data.size
+
+            stats_data.append({
+                'Map': map_name.replace('_', ' ').title(),
+                'Mean': f"{np.mean(map_data):.6f}",
+                'Std': f"{np.std(map_data):.6f}",
+                'Min': f"{np.min(map_data):.6f}",
+                'Max': f"{np.max(map_data):.6f}",
+                'Non-zero Voxels': f"{non_zero:,}",
+                'Total Voxels': f"{total:,}",
+                'Sparsity': f"{(1 - non_zero/total):.2%}"
+            })
+
+        stats_df = pd.DataFrame(stats_data)
+        st.dataframe(stats_df, use_container_width=True, hide_index=True)
+
+        # Add interpretation guide
+        st.subheader("🔍 Interpretation Guide")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("""
+            **Deficit Maps**:
+            - Higher mean values → Stronger overall deficit associations
+            - Lower sparsity → More widespread deficit patterns
+            - Compare baseline vs CNN to see methodological differences
+            """)
+
+        with col2:
+            st.markdown("""
+            **Treatment Maps**:
+            - Higher std deviation → More heterogeneous response patterns
+            - Higher sparsity → More focal treatment targets
+            - Non-zero voxels indicate potential treatment targets
+            """)
+
+        # Download statistics
+        csv = pd.DataFrame(stats_data).to_csv(index=False)
+        st.download_button(
+            label="📥 Download Statistics CSV",
+            data=csv,
+            file_name="map_statistics.csv",
+            mime="text/csv"
+        )
+    else:
+        st.warning("No result maps found. Please generate maps first using the training scripts.")
 
 
 if __name__ == "__main__":

@@ -5,7 +5,8 @@ This module provides comprehensive analysis tools for comparing treatment groups
 exploring correlations, and identifying patterns in brain lesion data.
 """
 
-from typing import Dict
+from typing import Dict, Optional
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -15,6 +16,7 @@ from plotly.subplots import make_subplots
 from scipy import stats
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
+import nibabel as nib
 
 from visualization import BrainLesionVisualizer
 
@@ -40,8 +42,14 @@ class BrainLesionAnalyzer:
         self.visualizer = visualizer
         self.tasks_df = visualizer.tasks_df
 
+        # Define results directory path
+        self.results_dir = Path(visualizer.data_root).parent / "results"
+
         # Cache for loaded lesion data to improve performance
         self._lesion_cache = {}
+
+        # Cache for result maps
+        self._result_maps_cache = {}
 
     @staticmethod
     def get_metric_explanations() -> Dict[str, str]:
@@ -939,6 +947,365 @@ class BrainLesionAnalyzer:
             report["volume_analysis"] = {"error": str(e)}
 
         return report
+
+    def load_evaluation_results(self) -> Optional[pd.DataFrame]:
+        """
+        Load model evaluation results from CSV file.
+
+        Returns:
+        --------
+        Optional[pd.DataFrame]
+            Evaluation results dataframe or None if file doesn't exist
+        """
+        eval_path = self.results_dir / "evaluation_report.csv"
+        if eval_path.exists():
+            return pd.read_csv(eval_path)
+        return None
+
+    def plot_model_performance(self) -> go.Figure:
+        """
+        Create comprehensive model performance comparison visualization.
+
+        Returns:
+        --------
+        go.Figure
+            Interactive plot comparing model performance metrics
+        """
+        eval_df = self.load_evaluation_results()
+
+        if eval_df is None:
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No evaluation results found. Please run evaluation scripts first.",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font=dict(size=14)
+            )
+            return fig
+
+        # Parse model and metric from the Model_Metric column
+        eval_df[['Model', 'Task', 'Metric']] = eval_df['Model_Metric'].str.extract(
+            r'(\w+)_(Task\d)_(\w+)'
+        )
+
+        # Create subplots for different metrics
+        fig = make_subplots(
+            rows=1,
+            cols=2,
+            subplot_titles=("Task 1: Severity Prediction (RMSE)", "Task 2: Response Classification (BACC)"),
+            specs=[[{"type": "bar"}, {"type": "bar"}]]
+        )
+
+        # Task 1 RMSE (lower is better)
+        task1_data = eval_df[eval_df['Task'] == 'Task1'].sort_values('Score')
+        colors_task1 = ['green' if score == task1_data['Score'].min() else 'lightblue'
+                        for score in task1_data['Score']]
+
+        fig.add_trace(
+            go.Bar(
+                x=task1_data['Model'],
+                y=task1_data['Score'],
+                name='RMSE',
+                marker_color=colors_task1,
+                text=task1_data['Score'].round(3),
+                textposition='auto',
+                showlegend=False
+            ),
+            row=1,
+            col=1
+        )
+
+        # Task 2 Balanced Accuracy (higher is better)
+        task2_data = eval_df[eval_df['Task'] == 'Task2'].sort_values('Score', ascending=False)
+        colors_task2 = ['green' if score == task2_data['Score'].max() else 'lightblue'
+                        for score in task2_data['Score']]
+
+        fig.add_trace(
+            go.Bar(
+                x=task2_data['Model'],
+                y=task2_data['Score'],
+                name='Balanced Accuracy',
+                marker_color=colors_task2,
+                text=task2_data['Score'].round(3),
+                textposition='auto',
+                showlegend=False
+            ),
+            row=1,
+            col=2
+        )
+
+        # Update layout
+        fig.update_xaxes(title_text="Model", row=1, col=1)
+        fig.update_yaxes(title_text="RMSE (lower is better)", row=1, col=1)
+        fig.update_xaxes(title_text="Model", row=1, col=2)
+        fig.update_yaxes(title_text="Balanced Accuracy (higher is better)", row=1, col=2)
+
+        fig.update_layout(
+            height=500,
+            title_text="Model Performance Comparison",
+            showlegend=False
+        )
+
+        return fig
+
+    def load_result_maps(self) -> Dict[str, np.ndarray]:
+        """
+        Load all NIfTI result maps from the results directory.
+
+        Returns:
+        --------
+        Dict[str, np.ndarray]
+            Dictionary mapping map names to 3D arrays
+        """
+        if not self._result_maps_cache:
+            map_files = {
+                'deficit_baseline': 'deficit_map_baseline.nii.gz',
+                'treatment_baseline': 'treatment_map_baseline.nii.gz',
+                'deficit_cnn': 'deficit_map_cnn.nii.gz',
+                'treatment_cnn': 'treatment_map_cnn.nii.gz'
+            }
+
+            for map_name, filename in map_files.items():
+                map_path = self.results_dir / filename
+                if map_path.exists():
+                    img = nib.load(map_path)
+                    self._result_maps_cache[map_name] = img.get_fdata()
+
+        return self._result_maps_cache
+
+    def plot_result_maps(self, map_type: str = 'deficit', slice_axis: str = 'sagittal',
+                         slice_idx: Optional[int] = None) -> go.Figure:
+        """
+        Visualize result maps (deficit or treatment) with comparison between models.
+
+        Parameters:
+        -----------
+        map_type : str
+            Type of map to visualize ('deficit' or 'treatment')
+        slice_axis : str
+            Axis for slicing ('sagittal', 'coronal', or 'axial')
+        slice_idx : int, optional
+            Slice index. If None, uses center slice
+
+        Returns:
+        --------
+        go.Figure
+            Interactive heatmap visualization
+        """
+        maps = self.load_result_maps()
+
+        # Get relevant maps
+        baseline_key = f'{map_type}_baseline'
+        cnn_key = f'{map_type}_cnn'
+
+        baseline_map = maps.get(baseline_key)
+        cnn_map = maps.get(cnn_key)
+
+        # Check if maps exist
+        has_baseline = baseline_map is not None
+        has_cnn = cnn_map is not None
+
+        if not has_baseline and not has_cnn:
+            fig = go.Figure()
+            fig.add_annotation(
+                text=f"No {map_type} maps found. Please run the generation scripts first.",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font=dict(size=14)
+            )
+            return fig
+
+        # Create subplots based on available maps
+        n_cols = sum([has_baseline, has_cnn])
+        if n_cols == 2:
+            n_cols = 3  # Add difference map
+
+        subplot_titles = []
+        if has_baseline:
+            subplot_titles.append(f"Baseline {map_type.capitalize()} Map")
+        if has_cnn:
+            subplot_titles.append(f"CNN {map_type.capitalize()} Map")
+        if has_baseline and has_cnn:
+            subplot_titles.append("Difference (CNN - Baseline)")
+
+        fig = make_subplots(
+            rows=1,
+            cols=n_cols,
+            subplot_titles=subplot_titles,
+            horizontal_spacing=0.1
+        )
+
+        # Get slice based on axis
+        def get_slice(data, axis, idx):
+            if idx is None:
+                idx = data.shape[{'sagittal': 0, 'coronal': 1, 'axial': 2}[axis]] // 2
+
+            if axis == 'sagittal':
+                return data[idx, :, :]
+            elif axis == 'coronal':
+                return data[:, idx, :]
+            else:  # axial
+                return data[:, :, idx]
+
+        col = 1
+
+        # Add baseline map
+        if has_baseline:
+            baseline_slice = get_slice(baseline_map, slice_axis, slice_idx)
+            fig.add_trace(
+                go.Heatmap(
+                    z=baseline_slice.T,
+                    colorscale='RdBu_r',
+                    showscale=True,
+                    name='Baseline',
+                    colorbar=dict(title='Value', x=0.3*col-0.2)
+                ),
+                row=1,
+                col=col
+            )
+            col += 1
+
+        # Add CNN map
+        if has_cnn:
+            cnn_slice = get_slice(cnn_map, slice_axis, slice_idx)
+            fig.add_trace(
+                go.Heatmap(
+                    z=cnn_slice.T,
+                    colorscale='RdBu_r',
+                    showscale=True,
+                    name='CNN',
+                    colorbar=dict(title='Value', x=0.3*col-0.2)
+                ),
+                row=1,
+                col=col
+            )
+            col += 1
+
+        # Add difference map if both exist
+        if has_baseline and has_cnn:
+            diff_slice = cnn_slice - baseline_slice
+            fig.add_trace(
+                go.Heatmap(
+                    z=diff_slice.T,
+                    colorscale='RdBu_r',
+                    showscale=True,
+                    name='Difference',
+                    zmid=0,
+                    colorbar=dict(title='Difference', x=0.3*col-0.2)
+                ),
+                row=1,
+                col=col
+            )
+
+        # Update layout
+        slice_info = f"{slice_axis.capitalize()} slice"
+        if slice_idx is not None:
+            slice_info += f" (index={slice_idx})"
+
+        fig.update_layout(
+            height=500,
+            title_text=f"{map_type.capitalize()} Substrate Maps - {slice_info}",
+            showlegend=False
+        )
+
+        # Update axes
+        for i in range(1, n_cols + 1):
+            fig.update_xaxes(title_text="Y (left-right)", row=1, col=i)
+            fig.update_yaxes(title_text="Z (inferior-superior)", row=1, col=i)
+
+        return fig
+
+    def plot_map_statistics(self) -> go.Figure:
+        """
+        Create statistical comparison of result maps.
+
+        Returns:
+        --------
+        go.Figure
+            Statistical analysis of the generated maps
+        """
+        maps = self.load_result_maps()
+
+        if not maps:
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No result maps found to analyze.",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font=dict(size=14)
+            )
+            return fig
+
+        # Calculate statistics for each map
+        stats_data = []
+        for map_name, map_data in maps.items():
+            stats_data.append({
+                'Map': map_name.replace('_', ' ').title(),
+                'Mean': np.mean(map_data),
+                'Std': np.std(map_data),
+                'Min': np.min(map_data),
+                'Max': np.max(map_data),
+                'Non-zero voxels': np.sum(map_data != 0),
+                'Sparsity': 1 - (np.sum(map_data != 0) / map_data.size)
+            })
+
+        stats_df = pd.DataFrame(stats_data)
+
+        # Create subplots
+        fig = make_subplots(
+            rows=2,
+            cols=2,
+            subplot_titles=("Mean Values", "Standard Deviation",
+                          "Non-zero Voxel Count", "Sparsity"),
+            specs=[[{"type": "bar"}, {"type": "bar"}],
+                   [{"type": "bar"}, {"type": "bar"}]]
+        )
+
+        # Add traces
+        fig.add_trace(
+            go.Bar(x=stats_df['Map'], y=stats_df['Mean'], name='Mean'),
+            row=1, col=1
+        )
+
+        fig.add_trace(
+            go.Bar(x=stats_df['Map'], y=stats_df['Std'], name='Std Dev'),
+            row=1, col=2
+        )
+
+        fig.add_trace(
+            go.Bar(x=stats_df['Map'], y=stats_df['Non-zero voxels'], name='Non-zero'),
+            row=2, col=1
+        )
+
+        fig.add_trace(
+            go.Bar(x=stats_df['Map'], y=stats_df['Sparsity'], name='Sparsity'),
+            row=2, col=2
+        )
+
+        # Update layout
+        fig.update_layout(
+            height=700,
+            title_text="Result Maps Statistical Comparison",
+            showlegend=False
+        )
+
+        # Update axes
+        fig.update_xaxes(tickangle=45)
+        fig.update_yaxes(title_text="Mean Value", row=1, col=1)
+        fig.update_yaxes(title_text="Std Deviation", row=1, col=2)
+        fig.update_yaxes(title_text="Count", row=2, col=1)
+        fig.update_yaxes(title_text="Sparsity (0-1)", row=2, col=2)
+
+        return fig
 
     def get_analysis_methodology_guide(self) -> Dict[str, str]:
         """
