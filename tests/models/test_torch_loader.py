@@ -49,6 +49,7 @@ class TestLesionDataset:
                 "lesion_id": ["lesion001.nii.gz", "lesion002.nii.gz"],
                 "lesion_filepath": [mock_nifti_file, mock_nifti_file],
                 "clinical_score": [5.0, 3.2],
+                "outcome_score": [2.1, np.nan],  # Second has no outcome
                 "is_responder": [True, False],
                 "treatment_assignment": ["Treatment", "Control"],
             }
@@ -56,28 +57,27 @@ class TestLesionDataset:
 
     def test_dataset_initialization(self, mock_dataframe):
         """Test that dataset initializes correctly."""
-        dataset = LesionDataset(mock_dataframe, "clinical_score")
+        dataset = LesionDataset(mock_dataframe)
 
         assert len(dataset) == 2
-        assert dataset.target_col == "clinical_score"
         assert len(dataset.df) == 2
 
     def test_dataset_length(self, mock_dataframe):
         """Test that __len__ returns correct length."""
-        dataset = LesionDataset(mock_dataframe, "clinical_score")
+        dataset = LesionDataset(mock_dataframe)
         assert len(dataset) == 2
 
         # Test with single row
         single_row_df = mock_dataframe.iloc[:1].copy()
-        single_dataset = LesionDataset(single_row_df, "clinical_score")
+        single_dataset = LesionDataset(single_row_df)
         assert len(single_dataset) == 1
 
-    def test_dataset_getitem_clinical_score(self, mock_dataframe):
-        """Test __getitem__ with clinical_score as target."""
-        dataset = LesionDataset(mock_dataframe, "clinical_score")
+    def test_dataset_returns_dictionary_of_targets(self, mock_dataframe):
+        """Test that __getitem__ returns a dictionary of targets."""
+        dataset = LesionDataset(mock_dataframe)
 
         # Get first item
-        data_tensor, target_tensor = dataset[0]
+        data_tensor, targets = dataset[0]
 
         # Check data tensor shape (should have channel dimension)
         assert data_tensor.shape == (
@@ -88,58 +88,69 @@ class TestLesionDataset:
         ), f"Expected shape (1, 91, 109, 91), got {data_tensor.shape}"
         assert data_tensor.dtype == torch.float32
 
-        # Check target tensor
-        assert (
-            target_tensor.shape == ()
-        ), f"Expected scalar tensor, got shape {target_tensor.shape}"
-        assert target_tensor.dtype == torch.float32
-        assert target_tensor.item() == 5.0  # First row's clinical_score
+        # Check that targets is a dictionary
+        assert isinstance(targets, dict), "Targets should be a dictionary"
+        assert "severity" in targets
+        assert "outcome" in targets
+        assert "treatment" in targets
 
-    def test_dataset_getitem_is_responder(self, mock_dataframe):
-        """Test __getitem__ with is_responder as target."""
-        dataset = LesionDataset(mock_dataframe, "is_responder")
+        # Check severity target
+        assert targets["severity"].shape == (), "Severity should be a scalar"
+        assert targets["severity"].dtype == torch.float32
+        assert pytest.approx(targets["severity"].item()) == 5.0  # First row's clinical_score
 
-        # Get first item
-        data_tensor, target_tensor = dataset[0]
+        # Check outcome target
+        assert targets["outcome"].shape == (), "Outcome should be a scalar"
+        assert targets["outcome"].dtype == torch.float32
+        assert pytest.approx(targets["outcome"].item()) == 2.1  # First row's outcome_score
 
-        # Check data tensor shape
-        assert data_tensor.shape == (1, 91, 109, 91)
-        assert data_tensor.dtype == torch.float32
+        # Check treatment target
+        assert targets["treatment"].shape == (), "Treatment should be a scalar"
+        assert targets["treatment"].dtype == torch.float32
+        assert targets["treatment"].item() == 1.0  # "Treatment" -> 1
 
-        # Check target tensor
-        assert target_tensor.shape == ()
-        assert target_tensor.dtype == torch.float32
-        assert target_tensor.item() == 1.0  # True converted to 1.0
+    def test_dataset_treatment_encoding(self, mock_dataframe):
+        """Test that treatment assignment is correctly encoded."""
+        dataset = LesionDataset(mock_dataframe)
 
-        # Get second item
-        data_tensor_2, target_tensor_2 = dataset[1]
-        assert target_tensor_2.item() == 0.0  # False converted to 0.0
+        # Get first item (Treatment)
+        _, targets1 = dataset[0]
+        assert targets1["treatment"].item() == 1.0  # "Treatment" -> 1
 
-    def test_dataset_handles_nan_targets_gracefully(self, mock_nifti_file):
-        """Test that dataset handles NaN targets by converting them to a default value."""
+        # Get second item (Control)
+        _, targets2 = dataset[1]
+        assert targets2["treatment"].item() == 0.0  # "Control" -> 0
+
+    def test_dataset_handles_nan_targets(self, mock_nifti_file):
+        """Test that dataset handles NaN targets correctly."""
         # Create DataFrame with NaN values
         df_with_nan = pd.DataFrame(
             {
                 "lesion_id": ["lesion001.nii.gz"],
                 "lesion_filepath": [mock_nifti_file],
                 "clinical_score": [np.nan],
-                "is_responder": [np.nan],
+                "outcome_score": [np.nan],
+                "treatment_assignment": [np.nan],
             }
         )
 
-        # Test with NaN clinical_score - should convert to 0.0
-        dataset_clinical = LesionDataset(df_with_nan, "clinical_score")
-        data, target = dataset_clinical[0]  # Should NOT raise an error
-        assert target.item() == 0.0, "NaN should be converted to 0.0"
+        dataset = LesionDataset(df_with_nan)
+        data, targets = dataset[0]
 
-        # Test with NaN is_responder - should convert to 0.0
-        dataset_responder = LesionDataset(df_with_nan, "is_responder")
-        data, target = dataset_responder[0]  # Should NOT raise an error
-        assert target.item() == 0.0, "NaN should be converted to 0.0"
+        # Clinical score should be NaN when missing
+        assert torch.isnan(targets["severity"]), "Missing clinical_score should be NaN"
+
+        # Outcome score should be NaN when missing
+        assert torch.isnan(targets["outcome"]), "Missing outcome_score should be NaN"
+
+        # Treatment should default to 0 when missing
+        assert (
+            targets["treatment"].item() == 0.0
+        ), "Missing treatment should default to 0"
 
     def test_dataset_data_range(self, mock_dataframe):
         """Test that loaded data has expected value range for binary lesion maps."""
-        dataset = LesionDataset(mock_dataframe, "clinical_score")
+        dataset = LesionDataset(mock_dataframe)
         data_tensor, _ = dataset[0]
 
         # Data should be binary (0s and 1s) since it's a lesion map
@@ -152,7 +163,7 @@ class TestLesionDataset:
 
     def test_dataset_index_out_of_bounds(self, mock_dataframe):
         """Test that dataset raises appropriate error for out-of-bounds index."""
-        dataset = LesionDataset(mock_dataframe, "clinical_score")
+        dataset = LesionDataset(mock_dataframe)
 
         with pytest.raises(IndexError):
             _ = dataset[5]  # Index too high
@@ -163,9 +174,15 @@ class TestLesionDataset:
     def test_dataset_with_empty_dataframe(self, mock_nifti_file):
         """Test dataset behavior with empty DataFrame."""
         empty_df = pd.DataFrame(
-            columns=["lesion_id", "lesion_filepath", "clinical_score"]
+            columns=[
+                "lesion_id",
+                "lesion_filepath",
+                "clinical_score",
+                "outcome_score",
+                "treatment_assignment",
+            ]
         )
-        dataset = LesionDataset(empty_df, "clinical_score")
+        dataset = LesionDataset(empty_df)
 
         assert len(dataset) == 0
 
@@ -174,47 +191,51 @@ class TestLesionDataset:
 
     def test_dataset_tensor_types(self, mock_dataframe):
         """Test that tensors have correct data types."""
-        dataset = LesionDataset(mock_dataframe, "clinical_score")
-        data_tensor, target_tensor = dataset[0]
+        dataset = LesionDataset(mock_dataframe)
+        data_tensor, targets = dataset[0]
 
         assert (
             data_tensor.dtype == torch.float32
         ), f"Expected float32, got {data_tensor.dtype}"
-        assert (
-            target_tensor.dtype == torch.float32
-        ), f"Expected float32, got {target_tensor.dtype}"
 
-    def test_dataset_with_different_target_columns(self, mock_dataframe):
-        """Test dataset with different target column names."""
-        # Add a custom target column
-        mock_dataframe["custom_target"] = [10.5, 20.3]
+        # Check all target tensors
+        for key in ["severity", "outcome", "treatment"]:
+            assert (
+                targets[key].dtype == torch.float32
+            ), f"Expected float32 for {key}, got {targets[key].dtype}"
 
-        dataset = LesionDataset(mock_dataframe, "custom_target")
-        _, target = dataset[0]
+    def test_dataset_outcome_with_nan(self, mock_dataframe):
+        """Test that dataset correctly handles NaN outcome for second sample."""
+        dataset = LesionDataset(mock_dataframe)
 
-        assert target.item() == 10.5, "Should use the specified target column"
+        # Second sample should have NaN outcome
+        _, targets = dataset[1]
+        assert torch.isnan(targets["outcome"]), "Second sample should have NaN outcome"
+        assert pytest.approx(targets["severity"].item()) == 3.2  # But severity should be valid
 
     def test_dataset_consistent_loading(self, mock_dataframe):
         """Test that loading the same item multiple times gives consistent results."""
-        dataset = LesionDataset(mock_dataframe, "clinical_score")
+        dataset = LesionDataset(mock_dataframe)
 
         # Load the same item multiple times
-        data1, target1 = dataset[0]
-        data2, target2 = dataset[0]
+        data1, targets1 = dataset[0]
+        data2, targets2 = dataset[0]
 
         # Should be identical
         assert torch.equal(data1, data2), "Data tensors should be identical"
-        assert torch.equal(target1, target2), "Target tensors should be identical"
+        for key in targets1.keys():
+            assert torch.equal(
+                targets1[key], targets2[key]
+            ), f"{key} tensors should be identical"
 
     def test_dataset_memory_efficiency(self, mock_dataframe):
         """Test that dataset doesn't preload all data (memory efficiency check)."""
         # This is more of a design verification test
-        dataset = LesionDataset(mock_dataframe, "clinical_score")
+        dataset = LesionDataset(mock_dataframe)
 
-        # Dataset should only store the DataFrame and target column name
+        # Dataset should only store the DataFrame
         # It should not have preloaded tensors stored as attributes
         assert hasattr(dataset, "df")
-        assert hasattr(dataset, "target_col")
 
         # Should not have preloaded data attributes
         assert not hasattr(dataset, "_preloaded_data")

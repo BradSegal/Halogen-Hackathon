@@ -114,12 +114,12 @@ def setup_data_loaders(
         raise ValueError(f"Invalid task: {task}. Must be 'task1' or 'task2'")
 
     # For smoke test, use only a small subset
-    # if smoke_test:
-    train_df = train_df.head(16)  # Use only 16 samples for smoke test
-    val_df = val_df.head(4)  # Use only 4 samples for validation in smoke test
-    logger.info(
-        f"Smoke test mode: Using only {len(train_df)} train and {len(val_df)} validation samples"
-    )
+    if smoke_test:
+        train_df = train_df.head(16)  # Use only 16 samples for smoke test
+        val_df = val_df.head(4)  # Use only 4 samples for validation in smoke test
+        logger.info(
+            f"Smoke test mode: Using only {len(train_df)} train and {len(val_df)} validation samples"
+        )
 
     # Create datasets from the DataFrames
     train_dataset = LesionDataset(train_df, target_col)
@@ -250,7 +250,7 @@ def train_model(task: str, smoke_test: bool = False, train_on_all: bool = False)
             pos_weight=pos_weight.to(device) if pos_weight else None
         )
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-2)  # , weight_decay=1e-2)
+    optimizer = torch.optim.SGD(model.parameters(), lr=1e-2)  # , weight_decay=1e-2)
 
     # Training parameters
     max_epochs = 2 if smoke_test else 50
