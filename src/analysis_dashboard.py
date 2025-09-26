@@ -25,22 +25,146 @@ from visualization import BrainLesionVisualizer
 class BrainLesionAnalyzer:
     """
     Advanced analysis toolkit for brain lesion data.
+
+    This class provides comprehensive statistical and machine learning analysis
+    of brain lesion patterns, treatment outcomes, and population-level trends.
+    All analyses are designed to support clinical research in brain injury rehabilitation.
     """
-    
+
     def __init__(self, visualizer: BrainLesionVisualizer):
         """
         Initialize analyzer with visualizer instance.
-        
+
         Parameters:
         -----------
         visualizer : BrainLesionVisualizer
-            Initialized visualizer instance
+            Initialized visualizer instance containing lesion data and metadata
         """
         self.visualizer = visualizer
         self.tasks_df = visualizer.tasks_df
-        
-        # Cache for loaded lesion data
+
+        # Cache for loaded lesion data to improve performance
         self._lesion_cache = {}
+
+    @staticmethod
+    def get_metric_explanations() -> Dict[str, str]:
+        """
+        Get detailed explanations of all metrics and calculations used in the analysis.
+
+        Returns:
+        --------
+        Dict[str, str]
+            Dictionary mapping metric names to their detailed explanations
+        """
+        return {
+            'improvement_score': """
+            **Improvement Score**: Clinical Score (baseline) - Outcome Score (post-treatment)
+
+            • Positive values indicate improvement (reduced deficit severity)
+            • Negative values indicate worsening
+            • Zero indicates no change
+            • Calculated only for patients with both baseline and outcome measurements
+            """,
+
+            'response_rate': """
+            **Response Rate**: Percentage of patients showing any improvement (Improvement Score > 0)
+
+            • Binary classification: Responder (improvement > threshold) vs Non-responder
+            • Default threshold is 0 (any positive improvement)
+            • Can be adjusted to require clinically meaningful improvement (e.g., ≥5 points)
+            • Used to compare treatment effectiveness between groups
+            """,
+
+            'cohens_d': """
+            **Cohen's d (Effect Size)**: Standardized measure of the difference between two group means
+
+            Formula: (Mean₁ - Mean₂) / Pooled Standard Deviation
+
+            Interpretation:
+            • d = 0.2: Small effect
+            • d = 0.5: Medium effect
+            • d = 0.8: Large effect
+            • Positive values favor the first group (typically treatment)
+            """,
+
+            'statistical_tests': """
+            **Statistical Tests Used**:
+
+            1. **Independent t-test**: Compares mean improvement between treatment/control groups
+               - Assumes normal distribution and equal variances
+               - p < 0.05 indicates statistically significant difference
+
+            2. **Mann-Whitney U test**: Non-parametric alternative to t-test
+               - Does not assume normal distribution
+               - More robust to outliers and skewed data
+
+            3. **Chi-square test**: Compares response rates between groups
+               - Tests if proportions of responders differ significantly
+               - Used for categorical outcome analysis
+            """,
+
+            'lesion_frequency_maps': """
+            **Lesion Frequency Maps**: Voxel-wise probability maps showing lesion occurrence patterns
+
+            Calculation:
+            1. For each voxel position (x,y,z), count how many patients have a lesion at that location
+            2. Divide by total number of patients in the group
+            3. Result: probability (0-1) of lesion occurrence at each brain location
+
+            Uses:
+            • Identify common lesion sites within a group
+            • Compare lesion patterns between responders/non-responders
+            • Discover brain regions associated with specific outcomes
+            """,
+
+            'pca_clustering': """
+            **PCA and Clustering Methodology**:
+
+            1. **Principal Component Analysis (PCA)**:
+               - Reduces high-dimensional lesion data (91×109×91 voxels) to lower dimensions
+               - Captures main patterns of variance in lesion locations
+               - First few components explain most variance in the data
+
+            2. **K-means Clustering**:
+               - Groups patients with similar lesion patterns
+               - Applied to PCA-reduced data for computational efficiency
+               - Number of clusters can be adjusted based on clinical needs
+
+            3. **Cluster Analysis**:
+               - Each cluster represents a distinct lesion pattern subtype
+               - Can reveal different injury mechanisms or outcomes
+               - Useful for personalized treatment approaches
+            """,
+
+            'volume_calculations': """
+            **Lesion Volume Calculations**:
+
+            Method:
+            1. Count total number of voxels marked as lesioned (value = 1) in the 3D binary mask
+            2. Each voxel represents a small cube of brain tissue
+            3. Total volume = number of lesioned voxels × voxel size
+
+            Clinical Relevance:
+            • Larger lesions often correlate with more severe deficits
+            • Volume alone doesn't predict outcome - location matters more
+            • Used to control for lesion size when comparing treatments
+            """,
+
+            'population_heatmaps': """
+            **Population Heatmaps**: Aggregate visualization of lesion patterns across groups
+
+            Generation Process:
+            1. Load all lesion masks for the specified group (e.g., treatment, control)
+            2. Sum lesion masks voxel-wise across all patients
+            3. Normalize by group size to get frequency values (0-1)
+            4. Apply color mapping where warmer colors = higher lesion frequency
+
+            Interpretation:
+            • "Hot spots" indicate brain regions commonly affected in that group
+            • Can reveal anatomical patterns associated with specific deficits
+            • Comparison between groups shows differential lesion distributions
+            """
+        }
     
     def _load_lesion_cached(self, lesion_id: str) -> np.ndarray:
         """
@@ -66,12 +190,32 @@ class BrainLesionAnalyzer:
     
     def analyze_treatment_efficacy(self) -> Dict:
         """
-        Comprehensive analysis of treatment efficacy.
-        
+        Comprehensive analysis of treatment efficacy comparing treatment vs control groups.
+
+        This method performs multiple statistical analyses to evaluate treatment effectiveness:
+
+        **Calculations Performed:**
+        1. **Improvement Score**: Clinical Score (baseline) - Outcome Score (post-treatment)
+        2. **Group Comparisons**: Treatment group vs Control group mean improvements
+        3. **Response Rate**: Percentage of patients with positive improvement (>0)
+        4. **Statistical Tests**: t-test and Mann-Whitney U test for group differences
+        5. **Effect Size**: Cohen's d to quantify the magnitude of treatment effect
+        6. **Response Rate Comparison**: Chi-square test for proportional differences
+
+        **Key Metrics Explained:**
+        - **Cohen's d > 0.8**: Large effect size (clinically significant)
+        - **p-value < 0.05**: Statistically significant difference
+        - **Response Rate**: Simple binary classification of treatment success
+
         Returns:
         --------
         Dict
-            Analysis results including statistical tests and effect sizes
+            Comprehensive results including:
+            - Mean improvements for both groups
+            - Response rates and counts
+            - Statistical test results (t-test, Mann-Whitney U, Chi-square)
+            - Effect size (Cohen's d)
+            - Sample sizes for each group
         """
         # Filter treatment data
         treatment_data = self.tasks_df[
@@ -248,17 +392,42 @@ class BrainLesionAnalyzer:
     
     def identify_responsive_regions(self, min_improvement: float = 5.0) -> Dict:
         """
-        Identify brain regions associated with treatment response.
-        
+        Identify brain regions associated with treatment response using lesion frequency mapping.
+
+        **Methodology:**
+        This analysis compares lesion patterns between treatment responders and non-responders
+        to identify brain regions where lesions are associated with better/worse outcomes.
+
+        **Processing Steps:**
+        1. **Patient Classification**: Divide treatment patients into responders (improvement ≥ threshold)
+           and non-responders (improvement < threshold)
+        2. **Lesion Frequency Calculation**: For each voxel, calculate the proportion of patients
+           in each group who have a lesion at that location
+        3. **Difference Mapping**: Subtract non-responder frequency from responder frequency
+        4. **Interpretation**: Positive values indicate regions where lesions are more common
+           in responders; negative values indicate regions more common in non-responders
+
+        **Clinical Significance:**
+        - Regions with higher lesion frequency in responders may indicate areas where
+          damage doesn't prevent treatment benefit
+        - Regions with higher frequency in non-responders may represent critical areas
+          where lesions impede recovery
+
         Parameters:
         -----------
-        min_improvement : float
-            Minimum improvement score to be considered a responder
-            
+        min_improvement : float, default=5.0
+            Minimum improvement score to classify a patient as a treatment responder.
+            Higher thresholds require more substantial clinical improvement.
+
         Returns:
         --------
         Dict
-            Analysis results including responsive regions
+            Analysis results containing:
+            - responder_frequency_map: 3D array of lesion frequencies in responders
+            - non_responder_frequency_map: 3D array of lesion frequencies in non-responders
+            - difference_map: 3D array showing responder - non_responder differences
+            - n_responders, n_non_responders: Sample sizes for each group
+            - response_rate: Overall proportion of patients who responded to treatment
         """
         # Get treatment data
         treatment_data = self.tasks_df[
@@ -387,17 +556,48 @@ class BrainLesionAnalyzer:
     
     def cluster_lesion_patterns(self, n_clusters: int = 5) -> Dict:
         """
-        Cluster patients based on lesion patterns.
-        
+        Cluster patients based on lesion patterns using dimensionality reduction and k-means clustering.
+
+        **Methodology:**
+        This unsupervised machine learning approach identifies distinct lesion pattern subtypes
+        within the patient population, which can reveal different injury mechanisms or prognoses.
+
+        **Processing Pipeline:**
+        1. **Data Preparation**: Load and flatten 3D lesion masks into 1D feature vectors
+           (91×109×91 = 902,629 features per patient)
+        2. **Dimensionality Reduction**: Apply PCA to reduce to ~50 components while
+           preserving most variance in lesion patterns
+        3. **K-means Clustering**: Group patients with similar lesion patterns into clusters
+        4. **Cluster Characterization**: Analyze clinical characteristics of each cluster
+        5. **Treatment Response Analysis**: Compare response rates across clusters
+
+        **Clinical Applications:**
+        - **Personalized Medicine**: Different lesion patterns may respond differently to treatments
+        - **Prognostic Modeling**: Clusters may predict different recovery trajectories
+        - **Treatment Selection**: Identify which patients are likely to benefit from specific interventions
+        - **Research Stratification**: Improve clinical trial design by accounting for lesion heterogeneity
+
+        **Interpretation Guidelines:**
+        - Clusters with high treatment response rates may represent "treatable" lesion patterns
+        - Clusters with similar baseline scores but different responses suggest lesion location matters
+        - Large, well-separated clusters indicate distinct lesion subtypes in the population
+
         Parameters:
         -----------
-        n_clusters : int
-            Number of clusters to create
-            
+        n_clusters : int, default=5
+            Number of distinct lesion pattern clusters to identify.
+            Should be chosen based on clinical needs and data characteristics.
+
         Returns:
         --------
         Dict
-            Clustering results and analysis
+            Comprehensive clustering analysis including:
+            - cluster_labels: Assigned cluster for each patient
+            - clustered_data: DataFrame with cluster assignments and clinical data
+            - cluster_statistics: Summary statistics for each cluster
+            - pca_components: Low-dimensional representation of lesion patterns
+            - pca_explained_variance: Proportion of variance captured by each component
+            - n_clusters: Number of clusters used
         """
         print("Loading lesion data for clustering...")
         
@@ -617,3 +817,113 @@ class BrainLesionAnalyzer:
             report['volume_analysis'] = {'error': str(e)}
         
         return report
+
+    def get_analysis_methodology_guide(self) -> Dict[str, str]:
+        """
+        Get comprehensive methodology guide for all dashboard analyses.
+
+        Returns:
+        --------
+        Dict[str, str]
+            Detailed explanations of analysis methodologies and interpretations
+        """
+        return {
+            'data_preprocessing': """
+            ## Data Preprocessing and Quality Control
+
+            **Lesion Data Processing:**
+            1. **NIfTI File Loading**: Brain lesion masks loaded as 3D binary arrays (91×109×91 voxels)
+            2. **Quality Checks**: Verification of file integrity and expected dimensions
+            3. **Coordinate System**: Standard MNI space alignment for cross-patient comparison
+            4. **Missing Data Handling**: Patients with corrupted/missing lesion files are excluded from spatial analyses
+
+            **Clinical Data Processing:**
+            1. **Score Validation**: Clinical and outcome scores checked for valid ranges
+            2. **Treatment Group Assignment**: Verified assignment to Treatment/Control/N/A groups
+            3. **Improvement Calculation**: Baseline score - Outcome score (higher = better recovery)
+            4. **Outlier Detection**: Extreme values flagged but retained unless clearly erroneous
+            """,
+
+            'statistical_methodology': """
+            ## Statistical Analysis Framework
+
+            **Parametric vs Non-parametric Testing:**
+            - **T-tests**: Used when data approximates normal distribution
+            - **Mann-Whitney U**: Used for non-normal or ordinal data (more robust)
+            - **Chi-square**: Used for categorical outcomes (responder/non-responder)
+
+            **Multiple Comparisons:**
+            - Results should be interpreted cautiously when multiple brain regions are analyzed
+            - Consider Bonferroni or FDR correction for exploratory analyses
+            - Focus on effect sizes, not just p-values
+
+            **Effect Size Interpretation:**
+            - **Cohen's d**: Standardized measure of group difference
+            - **Clinical Significance**: Effect size ≥ 0.5 generally considered meaningful
+            - **Statistical vs Clinical**: Significant p-value doesn't guarantee clinical relevance
+            """,
+
+            'brain_mapping_methods': """
+            ## Brain Mapping and Spatial Analysis
+
+            **Lesion Frequency Mapping:**
+            1. **Voxel-wise Analysis**: Each brain location analyzed independently
+            2. **Group Aggregation**: Lesion masks summed across patients in each group
+            3. **Normalization**: Divided by group size to get proportion (0-1)
+            4. **Statistical Mapping**: Can be extended with permutation testing
+
+            **Population Heatmaps:**
+            - **Color Interpretation**: Warmer colors = higher lesion frequency
+            - **Anatomical Context**: Results should be interpreted with neuroanatomical knowledge
+            - **Resolution Limits**: Analysis limited by original scan resolution
+            - **Smoothing**: May be applied to reduce noise while preserving main patterns
+
+            **Difference Maps:**
+            - **Responder - Non-responder**: Positive values favor responders
+            - **Treatment - Control**: Shows treatment-specific lesion patterns
+            - **Threshold Selection**: Consider clinical significance when interpreting differences
+            """,
+
+            'machine_learning_approaches': """
+            ## Machine Learning Methods
+
+            **Principal Component Analysis (PCA):**
+            - **Purpose**: Reduce 900K+ voxel features to manageable dimensions
+            - **Variance Explained**: First 50 components typically capture 80-90% of variance
+            - **Interpretation**: Components represent main patterns of lesion co-occurrence
+            - **Limitations**: Components may not correspond to anatomically meaningful regions
+
+            **K-means Clustering:**
+            - **Algorithm**: Iteratively assigns patients to nearest cluster centroid
+            - **Initialization**: Random seed fixed for reproducible results
+            - **Cluster Count**: Should be chosen based on clinical interpretability
+            - **Validation**: Consider silhouette analysis or clinical outcome differences
+
+            **Cluster Interpretation:**
+            - **Clinical Characteristics**: Compare baseline scores, treatment response across clusters
+            - **Anatomical Patterns**: Visualize average lesion patterns for each cluster
+            - **Outcome Prediction**: Clusters may predict treatment response or recovery trajectory
+            """,
+
+            'visualization_principles': """
+            ## Visualization and Interpretation Guidelines
+
+            **2D Brain Slice Visualization:**
+            - **Slice Selection**: Typically sagittal (side view) for overview
+            - **Anatomical Orientation**: Following radiological conventions (left/right)
+            - **Color Schemes**: Consistent mapping across all visualizations
+            - **Overlay Transparency**: Balance between lesion visibility and brain structure
+
+            **Statistical Plot Interpretation:**
+            - **Box Plots**: Show median, quartiles, and outliers for group comparisons
+            - **Scatter Plots**: Reveal relationships and identify potential subgroups
+            - **Histograms**: Show distribution shape and identify skewness
+            - **Error Bars**: Represent standard error or confidence intervals
+
+            **Interactive Features:**
+            - **Parameter Adjustment**: Real-time updates for threshold changes
+            - **Filtering**: Dynamic subsetting based on clinical criteria
+            - **Zoom/Pan**: Detailed examination of brain regions
+            - **Export Options**: High-resolution figures for publication
+            """
+        }

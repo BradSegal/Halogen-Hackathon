@@ -237,19 +237,74 @@ def show_individual_lesion_explorer(visualizer, tasks_df):
 
 def show_population_analysis(visualizer, tasks_df):
     """Population-level analysis visualization."""
-    
+
     st.header("Population Analysis")
-    
+
+    # Add methodology explanation
+    with st.expander("🌍 Understanding Population Analysis"):
+        st.markdown("### Population Heatmap Methodology")
+        st.markdown("""
+        **How Population Heatmaps are Generated:**
+
+        1. **Data Aggregation**: Combine lesion masks from all patients in the selected group
+        2. **Frequency Calculation**: For each brain voxel, calculate what percentage of patients have a lesion
+        3. **Normalization**: Convert counts to frequencies (0-1 or 0-100%)
+        4. **Visualization**: Apply color mapping where intensity reflects lesion frequency
+
+        **Color Interpretation:**
+        - 🔴 **Red/Hot colors**: Brain regions frequently lesioned in this population
+        - 🔵 **Blue/Cool colors**: Brain regions rarely lesioned
+        - ⚫ **Black/Dark areas**: Brain regions never lesioned in this sample
+        """)
+
+        st.markdown("### 📊 Clinical Applications")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("""
+            **Research Applications:**
+            - Identify common lesion sites for specific conditions
+            - Compare lesion patterns between treatment groups
+            - Design targeted interventions for frequently affected regions
+            - Understand population-level brain vulnerability patterns
+            """)
+
+        with col2:
+            st.markdown("""
+            **Clinical Insights:**
+            - "Hot spots" may represent anatomically vulnerable regions
+            - Group differences suggest differential selection criteria
+            - Sparse regions may indicate areas less critical for the studied deficit
+            - Pattern consistency across patients suggests common pathophysiology
+            """)
+
+        st.markdown("### ⚠️ Interpretation Considerations")
+        st.warning("""
+        **Important Factors:**
+
+        📊 **Sample Size**: Larger groups provide more reliable frequency estimates
+
+        🎯 **Selection Bias**: Treatment group assignment may influence lesion patterns
+
+        🧠 **Anatomical Constraints**: Some brain regions are naturally more vulnerable to certain injury types
+
+        📍 **Spatial Resolution**: Analysis is limited by original image resolution
+
+        ⚖️ **Statistical Significance**: High frequency doesn't necessarily mean causal relationship
+        """)
+
     # Group selection
     group_filter = st.selectbox(
         "Select Group",
         ["All patients", "Treatment", "Control"],
-        index=0
+        index=0,
+        help="Compare lesion patterns between different patient groups"
     )
-    
+
     group_param = None if group_filter == "All patients" else group_filter
-    
+
     st.subheader("Population Lesion Heatmap")
+    if group_filter != "All patients":
+        st.info(f"🎯 Showing lesion frequency patterns for **{group_filter}** group patients only")
     
     with st.spinner("Generating population heatmap... This may take a few minutes."):
         try:
@@ -292,9 +347,39 @@ def show_population_analysis(visualizer, tasks_df):
 
 def show_treatment_efficacy(analyzer):
     """Treatment efficacy analysis."""
-    
+
     st.header("Treatment Efficacy Analysis")
-    
+
+    # Add methodology explanation
+    with st.expander("📖 Understanding Treatment Efficacy Analysis"):
+        explanations = analyzer.get_metric_explanations()
+
+        st.markdown("### Key Metrics Explained")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown(explanations['improvement_score'])
+            st.markdown(explanations['response_rate'])
+
+        with col2:
+            st.markdown(explanations['cohens_d'])
+            st.markdown(explanations['statistical_tests'])
+
+        st.markdown("### 📊 Interpretation Guide")
+        st.info("""
+        **How to interpret the results:**
+
+        🎯 **Primary Endpoint**: Mean improvement score difference between treatment and control groups
+
+        📈 **Statistical Significance**: p < 0.05 indicates treatment effect is unlikely due to chance
+
+        📏 **Clinical Significance**: Cohen's d ≥ 0.5 suggests meaningful clinical benefit
+
+        ✅ **Response Rate**: Percentage showing any improvement - useful for patient counseling
+
+        ⚖️ **Multiple Tests**: Both t-test (parametric) and Mann-Whitney U (non-parametric) provided for robustness
+        """)
+
     # Statistical summary
     try:
         efficacy_results = analyzer.analyze_treatment_efficacy()
@@ -366,18 +451,61 @@ def show_treatment_efficacy(analyzer):
 
 def show_responsive_regions(analyzer):
     """Treatment responsive regions analysis."""
-    
+
     st.header("Treatment Responsive Regions")
-    
+
+    # Add methodology explanation
+    with st.expander("🧠 Understanding Responsive Regions Analysis"):
+        explanations = analyzer.get_metric_explanations()
+
+        st.markdown("### Analysis Methodology")
+        st.markdown(explanations['lesion_frequency_maps'])
+
+        st.markdown("### 🎨 Color Map Interpretation")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("""
+            **Responder vs Non-responder Maps:**
+            - 🔴 **Red/Warm colors**: Higher lesion frequency
+            - 🔵 **Blue/Cool colors**: Lower lesion frequency
+            - ⚫ **Dark areas**: No lesions in this region
+            """)
+
+        with col2:
+            st.markdown("""
+            **Difference Map:**
+            - 🔴 **Red regions**: More lesions in responders
+            - 🔵 **Blue regions**: More lesions in non-responders
+            - ⚪ **White/neutral**: Similar frequencies
+            """)
+
+        st.markdown("### 🔬 Clinical Interpretation")
+        st.warning("""
+        **Important Considerations:**
+
+        🧩 **Paradoxical Findings**: Regions with more lesions in responders may indicate:
+        - Areas where damage doesn't prevent treatment benefit
+        - Compensatory mechanisms or alternate pathways
+        - Selection bias in treatment assignment
+
+        🎯 **Critical Regions**: Areas with more lesions in non-responders may represent:
+        - Brain regions essential for treatment response
+        - Areas where damage predicts poor prognosis
+        - Targets for future therapeutic development
+
+        📊 **Sample Size**: Results are more reliable with larger, balanced groups
+        """)
+
     # Parameter selection
     min_improvement = st.slider(
         "Minimum Improvement Score (to be considered responder)",
         min_value=0.0,
         max_value=20.0,
         value=5.0,
-        step=0.5
+        step=0.5,
+        help="Higher thresholds require more substantial clinical improvement to classify as 'responder'"
     )
-    
+
     st.subheader("Brain Regions Associated with Treatment Response")
     
     with st.spinner("Analyzing responsive regions... This may take a few minutes."):
@@ -411,20 +539,71 @@ def show_responsive_regions(analyzer):
 
 def show_lesion_clustering(analyzer):
     """Lesion pattern clustering analysis."""
-    
+
     st.header("Lesion Pattern Clustering")
-    
+
+    # Add methodology explanation
+    with st.expander("🤖 Understanding Lesion Pattern Clustering"):
+        explanations = analyzer.get_metric_explanations()
+
+        st.markdown("### Machine Learning Approach")
+        st.markdown(explanations['pca_clustering'])
+
+        st.markdown("### 📈 Visualization Components")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("""
+            **PCA Scatter Plot:**
+            - Each dot represents one patient
+            - Colors show cluster assignments
+            - Distance between dots reflects similarity
+            - Well-separated clusters indicate distinct patterns
+            """)
+
+        with col2:
+            st.markdown("""
+            **Cluster Statistics:**
+            - Clinical scores by cluster
+            - Treatment response rates
+            - Patient counts per cluster
+            - Baseline characteristics comparison
+            """)
+
+        st.markdown("### 🎯 Clinical Applications")
+        st.success("""
+        **Potential Uses:**
+
+        🏥 **Personalized Treatment**: Identify which lesion patterns respond best to specific treatments
+
+        📊 **Prognostic Modeling**: Predict recovery based on lesion pattern subtype
+
+        🔬 **Research Stratification**: Improve clinical trial design by accounting for lesion heterogeneity
+
+        🧠 **Mechanism Discovery**: Understand different injury types and recovery pathways
+
+        ⚡ **Treatment Selection**: Guide clinical decisions about intervention choices
+        """)
+
+        st.markdown("### ⚠️ Important Considerations")
+        st.warning("""
+        - **Cluster Count**: Start with 3-5 clusters for interpretability
+        - **Sample Size**: Each cluster should have meaningful sample sizes (>20 patients)
+        - **Clinical Validation**: Clusters should make anatomical/clinical sense
+        - **Reproducibility**: Results may vary with different random initializations
+        """)
+
     # Parameter selection
     n_clusters = st.slider(
         "Number of Clusters",
         min_value=2,
         max_value=10,
         value=5,
-        step=1
+        step=1,
+        help="More clusters provide finer distinctions but may be harder to interpret clinically"
     )
-    
+
     st.subheader("Clustering Analysis")
-    st.info("This analysis groups patients with similar lesion patterns using machine learning clustering.")
+    st.info("🔬 This analysis uses unsupervised machine learning to identify distinct lesion pattern subtypes in your patient population.")
     
     if st.button("Run Clustering Analysis"):
         with st.spinner("Performing clustering analysis... This may take several minutes."):
@@ -456,8 +635,72 @@ def show_lesion_clustering(analyzer):
 
 def show_volume_analysis(visualizer):
     """Lesion volume analysis."""
-    
+
     st.header("Lesion Volume Analysis")
+
+    # Add methodology explanation
+    with st.expander("📏 Understanding Volume Analysis"):
+        st.markdown("### Volume Calculation Method")
+        st.markdown("""
+        **How Lesion Volumes are Calculated:**
+
+        1. **Binary Mask Processing**: Each lesion is represented as a 3D binary mask where:
+           - 1 = lesioned brain tissue
+           - 0 = healthy brain tissue
+
+        2. **Voxel Counting**: Volume = total number of voxels marked as lesioned
+           - Each voxel represents a small cube of brain tissue
+           - Standard resolution provides clinically meaningful measurements
+
+        3. **Units**: Reported in voxels (can be converted to mm³ if voxel size is known)
+        """)
+
+        st.markdown("### 📊 Clinical Significance")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("""
+            **Volume-Deficit Relationship:**
+            - Generally, larger lesions → more severe deficits
+            - But location matters more than size alone
+            - Small lesions in critical areas can be devastating
+            - Large lesions in "silent" areas may have minimal impact
+            """)
+
+        with col2:
+            st.markdown("""
+            **Volume-Recovery Relationship:**
+            - Very large lesions may have limited recovery potential
+            - Medium-sized lesions often show variable outcomes
+            - Small lesions may recover more completely
+            - Individual variation is substantial
+            """)
+
+        st.markdown("### 🎯 Analysis Components")
+        st.info("""
+        **What the visualizations show:**
+
+        📈 **Volume vs Clinical Score**: Relationship between lesion size and deficit severity
+
+        🔄 **Volume vs Treatment Response**: Whether lesion size predicts treatment benefit
+
+        📊 **Distribution Plots**: Comparison of volume patterns between treatment groups
+
+        📈 **Correlation Analysis**: Statistical relationship between volume and outcomes
+        """)
+
+        st.markdown("### ⚠️ Interpretation Guidelines")
+        st.warning("""
+        **Important Considerations:**
+
+        🎯 **Location Trumps Size**: A small lesion in a critical area (e.g., motor cortex) may cause more severe deficits than a large lesion in a less critical region
+
+        📊 **Non-linear Relationships**: The relationship between volume and outcome is rarely linear
+
+        🧠 **Compensatory Mechanisms**: The brain can sometimes compensate for even large lesions
+
+        ⚖️ **Treatment Implications**: Volume may predict treatment response, but individual factors matter more
+        """)
+
     
     with st.spinner("Calculating lesion volumes..."):
         try:
@@ -527,9 +770,54 @@ def show_volume_analysis(visualizer):
 
 def show_statistical_report(analyzer):
     """Generate and display comprehensive statistical report."""
-    
+
     st.header("Statistical Report")
-    
+
+    # Add methodology explanation
+    with st.expander("📊 Understanding the Statistical Report"):
+        methodology = analyzer.get_analysis_methodology_guide()
+
+        st.markdown("### Report Components")
+        st.markdown("""
+        This comprehensive report synthesizes all analyses performed on your brain lesion dataset:
+
+        🎯 **Dataset Summary**: Basic descriptive statistics and sample characteristics
+
+        📈 **Treatment Efficacy**: Statistical comparison of treatment vs control outcomes
+
+        🧠 **Response Analysis**: Identification of treatment responders and their characteristics
+
+        📏 **Volume Analysis**: Relationship between lesion size and clinical outcomes
+        """)
+
+        st.markdown("### Statistical Framework")
+        st.markdown(methodology['statistical_methodology'])
+
+        st.markdown("### 📋 Report Interpretation Guide")
+        st.success("""
+        **How to Use This Report:**
+
+        📖 **Clinical Context**: Always interpret statistical results within clinical context
+
+        🔬 **Multiple Comparisons**: Consider correction for multiple testing in exploratory analyses
+
+        📊 **Effect Sizes**: Focus on clinical significance (effect sizes) not just p-values
+
+        🎯 **Sample Sizes**: Ensure adequate power for detected effects
+
+        ⚖️ **Limitations**: Consider selection bias, missing data, and confounding variables
+        """)
+
+        st.markdown("### Data Quality Considerations")
+        st.info("""
+        **Before interpreting results:**
+
+        ✅ Check sample sizes for each analysis
+        ✅ Verify data completeness and quality
+        ✅ Consider potential confounding variables
+        ✅ Assess clinical significance alongside statistical significance
+        """)
+
     if st.button("Generate Comprehensive Report"):
         with st.spinner("Generating comprehensive analysis report..."):
             try:
